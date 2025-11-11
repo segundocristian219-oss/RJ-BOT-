@@ -3,19 +3,14 @@ let handler = async (m, { conn }) => {
     if (!m.isGroup)
       return conn.reply(m.chat, '⚠️ Este comando solo funciona en grupos.', m);
 
-    const body =
+    let text =
       m.text ||
-      m.message?.extendedTextMessage?.text ||
+      m.msg?.caption ||
       m.message?.imageMessage?.caption ||
       m.message?.videoMessage?.caption ||
       '';
 
-    const text = body.replace(/^(\.n|n)\s*/i, '').trim();
-
-    const groupMetadata = await conn.groupMetadata(m.chat);
-    const participants = groupMetadata.participants.map(p => p.id);
-    const botNumber = conn.user?.id || conn.user?.jid;
-    const mentions = participants.filter(id => id !== botNumber);
+    text = text.replace(/^(\.n|n)\s*/i, '').trim();
 
     if (m.quoted) {
       const quoted = m.quoted?.message
@@ -26,16 +21,20 @@ let handler = async (m, { conn }) => {
       return;
     }
 
-    if (text.length > 0) {
+    if (text) {
       await conn.sendMessage(m.chat, { text }, { quoted: m });
       return;
     }
 
-    await conn.reply(m.chat, '❌ No hay nada para reenviar.', m);
+    if (m.message?.imageMessage || m.message?.videoMessage || m.msg?.mimetype) {
+      await conn.sendMessage(m.chat, { forward: m }, { quoted: m });
+      return;
+    }
 
+    await conn.reply(m.chat, '❌ No hay nada para reenviar.', m);
   } catch (err) {
-    console.error('Error en .n:', err);
-    await conn.reply(m.chat, '❌ Ocurrió un error al reenviar.\n' + err.message, m);
+    console.error(err);
+    await conn.reply(m.chat, '⚠️ Error al reenviar: ' + err.message, m);
   }
 };
 
