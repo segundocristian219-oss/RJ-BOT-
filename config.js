@@ -26,13 +26,13 @@ global.jadi = '𝖠𝗇𝗀𝖾𝗅𝖻𝗈𝗍𝗌'
 global.yukiJadibts = true
 
 global.namecanal = '𝖠𝗇𝗀𝖾𝗅 𝖡𝗈𝗍 𝖣𝖾𝗌𝖺𝗋𝗋𝗈𝗅𝗅𝗈'
-global.idcanal = '120363424241780448@newsletter'
-global.idcanal2 = '120363424241780448@newsletter'
+global.idcanal = '120363402177795471@newsletter'
+global.idcanal2 = '120363402177795471@newsletter'
 global.canal = 'https://whatsapp.com/channel/0029VbBIgz1HrDZg92ISUl2M'
-global.canalreg = '120363424241780448@newsletter'
+global.canalreg = '120363402177795471@newsletter'
 
 global.ch = {
-  ch1: '120363424241780448@newsletter'
+  ch1: '120363402177795471@newsletter'
 }
 
 global.multiplier = 69
