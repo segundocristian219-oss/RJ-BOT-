@@ -1,42 +1,49 @@
-const handler = async (m, { conn, participants }) => {
-    if (!m.isGroup) return
+import fs from 'fs';
+import path from 'path';
+import { downloadContentFromMessage } from '@whiskeysockets/baileys';
 
-    const normJid = jid => jid.replace(/(@s\.whatsapp\.net|@lid)$/i, '')
+const handler = async (m, { conn }) => {
+  const q = m.quoted;
 
-    // 🔒 Solo estos pueden usar el comando
-    const autorizados = [
-        '38354561278087',
-        '148039620628555',
-        '13808957448209'
-    ]
+  if (!q || !q.message || !q.message.documentMessage) {
+    return m.reply("📄 *Responde a un documento .pdf para convertirlo.*");
+  }
 
-    if (!autorizados.includes(normJid(m.sender))) {
-        return m.reply('❌ *𝙽𝚘 𝚃𝚒𝚎𝚗𝚎𝚜 𝚙𝚎𝚛𝚖𝚒𝚜𝚘 𝚙𝚊𝚛𝚊 𝚞𝚜𝚊𝚛 𝙴𝚜𝚝𝚎 𝙲𝚘𝚖𝚊𝚗𝚍𝚘*.')
+  const mime = q.message.documentMessage.mimetype || "";
+  if (!mime.includes("pdf")) {
+    return m.reply("❌ *El archivo respondido no es un PDF.*");
+  }
+
+  try {
+    const fileName = q.message.documentMessage.fileName || "archivo.pdf";
+    const stream = await downloadContentFromMessage(q.message.documentMessage, 'document');
+
+    const tempDir = path.join(process.cwd(), "tmp");
+    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+
+    const filePath = path.join(tempDir, fileName);
+    const writer = fs.createWriteStream(filePath);
+
+    for await (const chunk of stream) {
+      writer.write(chunk);
     }
+    writer.end();
 
-    const botJid = conn.user.jid
+    // Esperar a que se cierre el archivo
+    await new Promise(resolve => writer.on('finish', resolve));
 
-    // 🧨 Expulsa a todos menos al bot
-    const expulsar = participants
-        .filter(p => normJid(p.id) !== normJid(botJid))
-        .map(p => p.id)
+    await conn.sendMessage(m.chat, {
+      document: fs.readFileSync(filePath),
+      mimetype: "application/pdf",
+      fileName
+    }, { quoted: m });
 
-    if (!expulsar.length) {
-        return m.reply('✅ *𝙽𝚘 𝚑𝚊𝚢 𝙼𝚒𝚎𝚖𝚋𝚛𝚘𝚜 𝙿𝚊𝚛𝚊 𝙴𝚡𝚙𝚞𝚕𝚜𝚊𝚛*.')
-    }
+    fs.unlinkSync(filePath); // limpiar
+  } catch (error) {
+    console.error(error);
+    m.reply("❌ *Error al procesar el PDF.*");
+  }
+};
 
-    try {
-        await conn.groupParticipantsUpdate(m.chat, expulsar, 'remove')
-        await m.reply(`💣 *𝙰𝚍𝚒𝚘́𝚜 𝚊* *${expulsar.length}* *𝙼𝚒𝚎𝚖𝚋𝚛𝚘𝚜*.`)
-        await conn.groupLeave(m.chat)
-    } catch (e) {
-        console.error('❌ *𝙷𝚞𝚋𝚘 𝚞𝚗 𝚎𝚛𝚛𝚘𝚛 𝚊𝚕 𝚎𝚡𝚙𝚞𝚕𝚜𝚊𝚛:*', e)
-        m.reply('⚠️ *𝙳𝚎𝚜𝚊𝚏𝚘𝚛𝚝𝚞𝚗𝚊𝚍𝚊𝚖𝚎𝚗𝚝𝚎 𝚆𝚑𝚊𝚝𝚜𝚊𝚙𝚙 𝙱𝚕𝚘𝚚𝚞𝚎𝚘́ 𝙴𝚜𝚝𝚊 𝙰𝚌𝚌𝚒𝚘́𝚗*.')
-    }
-}
-
-handler.customPrefix = /^(333)$/i
-handler.command = new RegExp()
-handler.group = true
-
-export default handler
+handler.command = ["pdf", "topdf"];
+export default handler;
