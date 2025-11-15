@@ -18,7 +18,7 @@ let handler = async (m, { conn }) => {
     ];*/
 
     conn.sendMessage(m.chat, {
-      text:`${ssd}\n乂  *Speed* : ${latensi.toFixed(4)} _ms_`,
+      text:`${ssd}\n乂 *Speed* : ${latensi.toFixed(4)} _ms_`,
       //footer: '📊 Información del sistema',
       //buttons: buttons,
       //headerType: 1
