@@ -1,1 +1,55 @@
-j
+const handler = async (m, { conn, text }) => {
+  if (!text && m.quoted?.text) {
+    text = m.quoted.text
+  }
+
+  if (!text) {
+    return conn.sendMessage(
+      m.chat,
+      {
+        text: `☁️ *𝙰𝚐𝚛𝚎𝚐𝚊 𝚝𝚎𝚡𝚝𝚘 𝚘 𝚛𝚎𝚜𝚙𝚘𝚗𝚍𝚎 𝚊 𝚞𝚗 𝚖𝚎𝚗𝚜𝚊𝚓𝚎 𝚙𝚊𝚛𝚊 𝚌𝚛𝚎𝚊𝚛 𝚎𝚕 𝚜𝚝𝚒𝚌𝚔𝚎𝗋*.`,
+        ...global.rcanal
+      },
+      { quoted: m }
+    )
+  }
+
+  try {
+    await conn.sendMessage(m.chat, { react: { text: "🕒", key: m.key } })
+
+    const url = `https://api.siputzx.my.id/api/m/brat?text=${encodeURIComponent(text)}`
+
+    await conn.sendMessage(
+      m.chat,
+      {
+        sticker: { url },
+        packname: "",
+        author: "",
+        ...global.rcanal
+      },
+      { quoted: m }
+    )
+
+    await conn.sendMessage(m.chat, { react: { text: "✅", key: m.key } })
+
+  } catch (e) {
+    console.error(e)
+
+    await conn.sendMessage(m.chat, { react: { text: "❌", key: m.key } })
+
+    return conn.sendMessage(
+      m.chat,
+      {
+        text: '❌ *𝙴𝚛𝚛𝚘𝚛 𝙰𝚕 𝙶𝚎𝚗𝚎𝚛𝚊𝚛 𝚎𝚕 𝚂𝚝𝚒𝚌𝚔𝚎𝗋*.',
+        ...global.rcanal
+      },
+      { quoted: m }
+    )
+  }
+}
+
+handler.command = /^brat$/i
+handler.help = ["brat <texto>"]
+handler.tags = ["sticker"]
+
+export default handler
