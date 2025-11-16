@@ -61,7 +61,15 @@ ${cmds.map(cmd => `⭒ ִֶָ७ ꯭🥤˙⋆｡ - ${cmd}`).join('\n')}
       contextInfo: {
         ...(global.rcanal?.contextInfo || {}),
         mentionedJid: [userId]
-      }
+      },
+
+      buttons: [
+        {
+          buttonId: 'btn_creador',
+          buttonText: { displayText: '👑 Hernández.xyz' },
+          type: 1
+        }
+      ]
     },
     { quoted: m }
   )
