@@ -189,32 +189,6 @@ async function resumeDownload(videoUrl, key, mediaUrl) {
   return t.promise
 }
 
-async function prepareFormatsPriority(videoUrl) {
-  const id = videoUrl
-  cache[id] = cache[id] || { timestamp: Date.now(), files: {} }
-  const mediaAudioUrl = await getSkyApiUrl(videoUrl, "audio", 20000, 1)
-  if (mediaAudioUrl) {
-    try {
-      await startDownload(videoUrl, "audio", mediaAudioUrl)
-      const audioFile = downloadTasks[videoUrl]?.audio?.file
-      if (audioFile && validCache(audioFile)) cache[id].files.audio = audioFile
-    } catch {}
-  }
-  const mediaVideoUrl = await getSkyApiUrl(videoUrl, "video", 20000, 1)
-  if (mediaVideoUrl) {
-    try {
-      startDownload(videoUrl, "video", mediaVideoUrl)
-      .then(f => {
-        if (f && validCache(f)) {
-          cache[id].files.video = f
-          cache[id].timestamp = Date.now()
-        }
-      }).catch(() => {})
-    } catch {}
-  }
-  cache[id].timestamp = Date.now()
-}
-
 async function sendFile(conn, chatId, filePath, title, asDocument, type, quoted) {
   if (!validCache(filePath)) return
   const buffer = fs.readFileSync(filePath)
@@ -234,6 +208,7 @@ async function handleDownload(conn, job, choice) {
   const isDoc = key.endsWith("Doc")
   const type = key.startsWith("audio") ? "audio" : "video"
   const id = job.videoUrl
+
   const cached = cache[id]?.files?.[key]
   if (cached && validCache(cached)) {
     const size = fileSizeMB(cached).toFixed(1)
@@ -241,77 +216,20 @@ async function handleDownload(conn, job, choice) {
     cache[id].timestamp = Date.now()
     return sendFile(conn, job.chatId, cached, job.title, isDoc, type, job.commandMsg)
   }
-  const tasks = downloadTasks[id] || {}
-  if (type === "video" && tasks.audio && tasks.audio.status === "downloading") {
-    pauseDownload(id, "audio")
-    const mediaVideoUrl = await getSkyApiUrl(id, "video", 40000, 1)
-    if (!mediaVideoUrl) {
-      await resumeDownload(id, "audio", await getSkyApiUrl(id, "audio", 20000, 1))
-      return conn.sendMessage(job.chatId, { text: "❌ No se pudo obtener video, reanudando audio..." }, { quoted: job.commandMsg })
-    }
-    try {
-      await resumeDownload(id, "video", mediaVideoUrl)
-      const videoFile = downloadTasks[id].video.file
-      if (videoFile && validCache(videoFile)) {
-        cache[id] = cache[id] || { timestamp: Date.now(), files: {} }
-        cache[id].files.video = videoFile
-        cache[id].timestamp = Date.now()
-        const size = fileSizeMB(videoFile).toFixed(1)
-        await conn.sendMessage(job.chatId, { text: `⚡ Enviando video (${size} MB)` }, { quoted: job.commandMsg })
-        await sendFile(conn, job.chatId, videoFile, job.title, isDoc, "video", job.commandMsg)
-        const mediaAudioUrl = await getSkyApiUrl(id, "audio", 20000, 1)
-        if (mediaAudioUrl) resumeDownload(id, "audio", mediaAudioUrl).catch(() => {})
-        return
-      }
-    } catch (err) {
-      await conn.sendMessage(job.chatId, { text: `❌ Error video: ${err.message}` }, { quoted: job.commandMsg })
-      const mediaAudioUrl = await getSkyApiUrl(id, "audio", 20000, 1)
-      if (mediaAudioUrl) resumeDownload(id, "audio", mediaAudioUrl).catch(() => {})
-      return
-    }
-  }
-  if (type === "audio") {
-    if (tasks.audio && tasks.audio.status === "downloading") {
-      await conn.sendMessage(job.chatId, { text: `⏳ Descargando audio...` }, { quoted: job.commandMsg })
-      try {
-        const f = await tasks.audio.promise
-        if (f && validCache(f)) {
-          cache[id] = cache[id] || { timestamp: Date.now(), files: {} }
-          cache[id].files.audio = f
-          cache[id].timestamp = Date.now()
-          const size = fileSizeMB(f).toFixed(1)
-          await conn.sendMessage(job.chatId, { text: `⚡ Enviando audio (${size} MB)` }, { quoted: job.commandMsg })
-          return sendFile(conn, job.chatId, f, job.title, isDoc, "audio", job.commandMsg)
-        }
-      } catch {}
-    }
-    const mediaAudioUrl = await getSkyApiUrl(id, "audio", 40000, 1)
-    if (!mediaAudioUrl) return conn.sendMessage(job.chatId, { text: "❌ No se obtuvo enlace de audio" }, { quoted: job.commandMsg })
-    try {
-      const f = await startDownload(id, "audio", mediaAudioUrl)
-      if (f && validCache(f)) {
-        cache[id] = cache[id] || { timestamp: Date.now(), files: {} }
-        cache[id].files.audio = downloadTasks[id].audio.file
-        cache[id].timestamp = Date.now()
-        const size = fileSizeMB(f).toFixed(1)
-        await conn.sendMessage(job.chatId, { text: `⚡ Enviando audio (${size} MB)` }, { quoted: job.commandMsg })
-        return sendFile(conn, job.chatId, f, job.title, isDoc, "audio", job.commandMsg)
-      }
-    } catch (err) {
-      return conn.sendMessage(job.chatId, { text: `❌ Error: ${err.message}` }, { quoted: job.commandMsg })
-    }
-  }
-  const mediaVideoUrl2 = await getSkyApiUrl(id, "video", 40000, 1)
-  if (!mediaVideoUrl2) return conn.sendMessage(job.chatId, { text: "❌ No se obtuvo enlace de video" }, { quoted: job.commandMsg })
+
+  // Si no está en cache, iniciar descarga solo al solicitar
+  const mediaUrl = await getSkyApiUrl(id, type, 40000, 1)
+  if (!mediaUrl) return conn.sendMessage(job.chatId, { text: `❌ No se obtuvo enlace de ${type}` }, { quoted: job.commandMsg })
+
   try {
-    const f = await startDownload(id, "video", mediaVideoUrl2)
+    const f = await startDownload(id, key, mediaUrl)
     if (f && validCache(f)) {
       cache[id] = cache[id] || { timestamp: Date.now(), files: {} }
-      cache[id].files.video = downloadTasks[id].video.file
+      cache[id].files[key] = f
       cache[id].timestamp = Date.now()
       const size = fileSizeMB(f).toFixed(1)
-      await conn.sendMessage(job.chatId, { text: `⚡ Enviando video (${size} MB)` }, { quoted: job.commandMsg })
-      return sendFile(conn, job.chatId, f, job.title, isDoc, "video", job.commandMsg)
+      await conn.sendMessage(job.chatId, { text: `⚡ Enviando ${type} (${size} MB)` }, { quoted: job.commandMsg })
+      return sendFile(conn, job.chatId, f, job.title, isDoc, type, job.commandMsg)
     }
   } catch (err) {
     return conn.sendMessage(job.chatId, { text: `❌ Error: ${err.message}` }, { quoted: job.commandMsg })
@@ -398,44 +316,42 @@ const handler = async (msg, { conn, text, command }) => {
     downloading: false
   }
 
-  prepareFormatsPriority(videoUrl)
+  // NO iniciar descarga automáticamente
+  // prepareFormatsPriority(videoUrl)
 
-  // Borra el pending después de 10 minutos
-setTimeout(() => {
-  delete pending[preview.key.id]
-}, 10 * 60 * 1000) // 10 minutos en ms
+  setTimeout(() => delete pending[preview.key.id], 10 * 60 * 1000)
 
-await conn.sendMessage(msg.key.remoteJid, { react: { text: "✅", key: msg.key } })
+  await conn.sendMessage(msg.key.remoteJid, { react: { text: "✅", key: msg.key } })
 
-if (!conn._listeners) conn._listeners = {}
-if (!conn._listeners.play) {
-  conn._listeners.play = true
-  conn.ev.on("messages.upsert", async ev => {
-    for (const m of ev.messages || []) {
-      const react = m.message?.reactionMessage
-      if (!react) continue
-      const { key: reactKey, text: emoji, sender } = react
-      const job = pending[reactKey?.id]
-      if (!job || !["👍","❤️","📄","📁"].includes(emoji)) continue
-      if ((sender || m.key.participant) !== job.sender) {
-        await conn.sendMessage(job.chatId, { text: "❌ No autorizado." }, { quoted: job.commandMsg })
-        continue
+  if (!conn._listeners) conn._listeners = {}
+  if (!conn._listeners.play) {
+    conn._listeners.play = true
+    conn.ev.on("messages.upsert", async ev => {
+      for (const m of ev.messages || []) {
+        const react = m.message?.reactionMessage
+        if (!react) continue
+        const { key: reactKey, text: emoji, sender } = react
+        const job = pending[reactKey?.id]
+        if (!job || !["👍","❤️","📄","📁"].includes(emoji)) continue
+        if ((sender || m.key.participant) !== job.sender) {
+          await conn.sendMessage(job.chatId, { text: "❌ No autorizado." }, { quoted: job.commandMsg })
+          continue
+        }
+        if (job.downloading) continue
+        job.downloading = true
+
+        const mapping = { "👍": "audio", "❤️": "video", "📄": "audioDoc", "📁": "videoDoc" }
+        const type = mapping[emoji]?.startsWith("audio") ? "audio" : "video"
+        await conn.sendMessage(job.chatId, { text: `⏳ Descargando ${type}...` }, { quoted: job.commandMsg })
+
+        try { 
+          await handleDownload(conn, job, emoji) 
+        } finally { 
+          job.downloading = false 
+        }
       }
-      if (job.downloading) continue
-      job.downloading = true
-
-      const mapping = { "👍": "audio", "❤️": "video", "📄": "audioDoc", "📁": "videoDoc" }
-      const type = mapping[emoji]?.startsWith("audio") ? "audio" : "video"
-      await conn.sendMessage(job.chatId, { text: `⏳ Descargando ${type}...` }, { quoted: job.commandMsg })
-
-      try { 
-        await handleDownload(conn, job, emoji) 
-      } finally { 
-        job.downloading = false 
-      }
-    }
-  })
-}
+    })
+  }
 }
 
 handler.command = ["play","clean"]
