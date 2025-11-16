@@ -81,8 +81,8 @@ async function convertToMp3(inputFile) {
   return outFile
 }
 
-// gestor de tareas de descarga por videoUrl -> key (audio/video/audioDoc/videoDoc)
-const downloadTasks = {} // { [videoUrl]: { [key]: { file, status, controller, promise } } }
+// gestor de descargas por videoUrl -> key (audio/video/audioDoc/videoDoc)
+const downloadTasks = {}
 
 function ensureTask(videoUrl) {
   if (!downloadTasks[videoUrl]) downloadTasks[videoUrl] = {}
@@ -127,7 +127,6 @@ async function startDownload(videoUrl, key, mediaUrl) {
         throw new Error("archivo inválido después de descargar")
       }
       info.status = "done"
-      info.file = info.file
       return info.file
     } catch (err) {
       if (err.name === "CanceledError" || err.message === "canceled") {
@@ -159,7 +158,6 @@ async function resumeDownload(videoUrl, key, mediaUrl) {
   if (!t) return startDownload(videoUrl, key, mediaUrl)
   if (t.status === "done") return t.file
   if (t.status === "downloading") return t.promise
-  // paused -> resume by starting downloadWithResume again using existing file size
   const controller = new AbortController()
   t.controller = controller
   t.status = "downloading"
@@ -169,8 +167,7 @@ async function resumeDownload(videoUrl, key, mediaUrl) {
       if (fs.existsSync(t.file)) start = fs.statSync(t.file).size
       await queueDownload(() => downloadWithResume(mediaUrl, t.file, controller.signal, start))
       if (key.startsWith("audio") && path.extname(t.file) !== ".mp3") {
-        const mp3 = await convertToMp3(t.file)
-        t.file = mp3
+        t.file = await convertToMp3(t.file)
       }
       if (!validCache(t.file)) {
         safeUnlink(t.file)
@@ -189,33 +186,6 @@ async function resumeDownload(videoUrl, key, mediaUrl) {
     }
   })()
   return t.promise
-}
-
-async function prepareFormatsPriority(videoUrl) {
-  const id = videoUrl
-  cache[id] = cache[id] || { timestamp: Date.now(), files: {} }
-  const mediaAudioUrl = await getSkyApiUrl(videoUrl, "audio", 20000, 1)
-  if (mediaAudioUrl) {
-    try {
-      await startDownload(videoUrl, "audio", mediaAudioUrl)
-      const audioFile = downloadTasks[videoUrl]?.audio?.file
-      if (audioFile && validCache(audioFile)) cache[id].files.audio = audioFile
-    } catch {}
-  }
-  // after audio completes (or attempted), start video in background
-  const mediaVideoUrl = await getSkyApiUrl(videoUrl, "video", 20000, 1)
-  if (mediaVideoUrl) {
-    try {
-      startDownload(videoUrl, "video", mediaVideoUrl)
-        .then(f => {
-          if (f && validCache(f)) {
-            cache[id].files.video = f
-            cache[id].timestamp = Date.now()
-          }
-        }).catch(() => {})
-    } catch {}
-  }
-  cache[id].timestamp = Date.now()
 }
 
 async function sendFile(conn, chatId, filePath, title, asDocument, type, quoted) {
@@ -238,7 +208,6 @@ async function handleDownload(conn, job, choice) {
   const type = key.startsWith("audio") ? "audio" : "video"
   const id = job.videoUrl
 
-  // check cache by videoUrl
   const cached = cache[id]?.files?.[key]
   if (cached && validCache(cached)) {
     const size = fileSizeMB(cached).toFixed(1)
@@ -247,93 +216,29 @@ async function handleDownload(conn, job, choice) {
     return sendFile(conn, job.chatId, cached, job.title, isDoc, type, job.commandMsg)
   }
 
-  // if user requests video while audio download in progress -> pause audio and start video
-  const tasks = downloadTasks[id] || {}
-  if (type === "video" && tasks.audio && tasks.audio.status === "downloading") {
-    pauseDownload(id, "audio")
-    // start or resume video download
-    const mediaVideoUrl = await getSkyApiUrl(id, "video", 40000, 1)
-    if (!mediaVideoUrl) {
-      // resume audio if video can't be obtained
-      await resumeDownload(id, "audio", await getSkyApiUrl(id, "audio", 20000, 1))
-      return conn.sendMessage(job.chatId, { text: "❌ No se pudo obtener video, reanudando audio..." }, { quoted: job.commandMsg })
-    }
-    try {
-      await resumeDownload(id, "video", mediaVideoUrl)
-      const videoFile = downloadTasks[id].video.file
-      if (videoFile && validCache(videoFile)) {
-        cache[id] = cache[id] || { timestamp: Date.now(), files: {} }
-        cache[id].files.video = videoFile
-        cache[id].timestamp = Date.now()
-        const size = fileSizeMB(videoFile).toFixed(1)
-        await conn.sendMessage(job.chatId, { text: `⚡ Enviando video (${size} MB)` }, { quoted: job.commandMsg })
-        await sendFile(conn, job.chatId, videoFile, job.title, isDoc, "video", job.commandMsg)
-        // resume audio afterwards
-        const mediaAudioUrl = await getSkyApiUrl(id, "audio", 20000, 1)
-        if (mediaAudioUrl) resumeDownload(id, "audio", mediaAudioUrl).catch(() => {})
-        return
-      }
-    } catch (err) {
-      await conn.sendMessage(job.chatId, { text: `❌ Error video: ${err.message}` }, { quoted: job.commandMsg })
-      // try to resume audio
-      const mediaAudioUrl = await getSkyApiUrl(id, "audio", 20000, 1)
-      if (mediaAudioUrl) resumeDownload(id, "audio", mediaAudioUrl).catch(() => {})
-      return
-    }
-  }
+  await conn.sendMessage(job.chatId, { text: `⏳ Descargando ${type}...` }, { quoted: job.commandMsg })
 
-  // if audio is available in tasks but paused or downloading, wait/resume accordingly
-  if (type === "audio") {
-    if (tasks.audio && tasks.audio.status === "downloading") {
-      // will be sent when finishes; notify user
-      await conn.sendMessage(job.chatId, { text: `⏳ Descargando audio, espera un momento...` }, { quoted: job.commandMsg })
-      try {
-        const f = await tasks.audio.promise
-        if (f && validCache(f)) {
-          cache[id] = cache[id] || { timestamp: Date.now(), files: {} }
-          cache[id].files.audio = f
-          cache[id].timestamp = Date.now()
-          const size = fileSizeMB(f).toFixed(1)
-          await conn.sendMessage(job.chatId, { text: `⚡ Enviando audio (${size} MB)` }, { quoted: job.commandMsg })
-          return sendFile(conn, job.chatId, f, job.title, isDoc, "audio", job.commandMsg)
-        }
-      } catch (err) {
-        // fallthrough to direct download
-      }
-    }
-    // start or resume audio download
-    const mediaAudioUrl = await getSkyApiUrl(id, "audio", 40000, 1)
-    if (!mediaAudioUrl) return conn.sendMessage(job.chatId, { text: "❌ No se obtuvo enlace de audio" }, { quoted: job.commandMsg })
-    try {
-      const f = await startDownload(id, "audio", mediaAudioUrl)
-      if (f && validCache(f)) {
-        cache[id] = cache[id] || { timestamp: Date.now(), files: {} }
-        cache[id].files.audio = downloadTasks[id].audio.file
-        cache[id].timestamp = Date.now()
-        const size = fileSizeMB(f).toFixed(1)
-        await conn.sendMessage(job.chatId, { text: `⚡ Enviando audio (${size} MB)` }, { quoted: job.commandMsg })
-        return sendFile(conn, job.chatId, f, job.title, isDoc, "audio", job.commandMsg)
-      }
-    } catch (err) {
-      return conn.sendMessage(job.chatId, { text: `❌ Error: ${err.message}` }, { quoted: job.commandMsg })
-    }
-  }
+  const mediaUrl = await getSkyApiUrl(id, type, 40000, 1)
+  if (!mediaUrl) return conn.sendMessage(job.chatId, { text: `❌ No se pudo obtener enlace de ${type}` }, { quoted: job.commandMsg })
 
-  // default: start direct video download if not handled above
-  const mediaVideoUrl2 = await getSkyApiUrl(id, "video", 40000, 1)
-  if (!mediaVideoUrl2) return conn.sendMessage(job.chatId, { text: "❌ No se obtuvo enlace de video" }, { quoted: job.commandMsg })
   try {
-    const f = await startDownload(id, "video", mediaVideoUrl2)
+    const f = await startDownload(id, key, mediaUrl)
     if (f && validCache(f)) {
       cache[id] = cache[id] || { timestamp: Date.now(), files: {} }
-      cache[id].files.video = downloadTasks[id].video.file
+      cache[id].files[key] = f
       cache[id].timestamp = Date.now()
       const size = fileSizeMB(f).toFixed(1)
-      await conn.sendMessage(job.chatId, { text: `⚡ Enviando video (${size} MB)` }, { quoted: job.commandMsg })
-      return sendFile(conn, job.chatId, f, job.title, isDoc, "video", job.commandMsg)
+      await conn.sendMessage(job.chatId, { text: `⚡ Enviando ${type} (${size} MB)` }, { quoted: job.commandMsg })
+      await sendFile(conn, job.chatId, f, job.title, isDoc, type, job.commandMsg)
+
+      // iniciar descarga del otro formato en background
+      const otherType = type === "audio" ? "video" : "audio"
+      const otherKey = key.includes("Doc") ? `${otherType}Doc` : otherType
+      const otherUrl = await getSkyApiUrl(id, otherType, 20000, 1)
+      if (otherUrl) startDownload(id, otherKey, otherUrl).catch(() => {})
     }
   } catch (err) {
-    return conn.sendMessage(job.chatId, { text: `❌ Error: ${err.message}` }, { quoted: job.commandMsg })
+    return conn.sendMessage(job.chatId, { text: `❌ Error al descargar ${type}: ${err.message}` }, { quoted: job.commandMsg })
   }
 }
 
@@ -343,7 +248,6 @@ const handler = async (msg, { conn, text, command }) => {
   if (command === "clean") {
     let deleted = 0, freed = 0
     const now = Date.now()
-
     for (const [videoUrl, data] of Object.entries(cache)) {
       if (now - data.timestamp > 7 * 24 * 60 * 60 * 1000) {
         for (const f of Object.values(data.files)) {
@@ -356,8 +260,6 @@ const handler = async (msg, { conn, text, command }) => {
         delete cache[videoUrl]
       }
     }
-
-    // remove orphan temp files older than expiration
     const files = fs.readdirSync(TMP_DIR).map(f => path.join(TMP_DIR, f))
     for (const f of files) {
       try {
@@ -369,7 +271,6 @@ const handler = async (msg, { conn, text, command }) => {
         }
       } catch {}
     }
-
     const mb = (freed / (1024 * 1024)).toFixed(2)
     return conn.sendMessage(msg.chat, { text: `🧹 Limpieza PRO\nEliminados: ${deleted}\nEspacio liberado: ${mb} MB` }, { quoted: msg })
   }
@@ -387,15 +288,13 @@ const handler = async (msg, { conn, text, command }) => {
   catch { return conn.sendMessage(msg.key.remoteJid, { text: "❌ Error al buscar video." }, { quoted: msg }) }
 
   const video = res.videos?.[0]
-  if (!video) {
-    return conn.sendMessage(msg.key.remoteJid, { text: "❌ Sin resultados." }, { quoted: msg })
-  }
+  if (!video) return conn.sendMessage(msg.key.remoteJid, { text: "❌ Sin resultados." }, { quoted: msg })
 
   const { url: videoUrl, title, timestamp: duration, views, author, thumbnail } = video
   const caption = `
 𝚂𝚄𝙿𝙴𝚁 𝙿𝙻𝙰𝚈
 🎵 𝚃𝚒́𝚝𝚞𝚕𝚘: ${title}
-🕑 𝙳𝚞𝚛𝚊𝚌𝚒𝚘́𝚗: ${duration}
+🕑 𝙳𝚞𝚛𝚊𝚌𝚒́𝚘́𝚗: ${duration}
 👁️‍🗨️ 𝚅𝚒𝚜𝚝𝚊𝚜: ${(views || 0).toLocaleString()}
 🎤 𝙰𝚛𝚝𝚒𝚜𝚝𝚊: ${author?.name || author || "Desconocido"}
 🌐 𝙻𝚒𝚗𝚔: ${videoUrl}
@@ -417,11 +316,6 @@ const handler = async (msg, { conn, text, command }) => {
     sender: msg.key.participant || msg.participant,
     downloading: false
   }
-
-  // Iniciar solo la descarga de audio en segundo plano para velocidad percibida
-  prepareFormatsPriority(videoUrl)
-  setTimeout(() => delete pending[preview.key.id], 10 * 60 * 1000)
-  await conn.sendMessage(msg.key.remoteJid, { react: { text: "✅", key: msg.key } })
 
   if (!conn._listeners) conn._listeners = {}
   if (!conn._listeners.play) {
