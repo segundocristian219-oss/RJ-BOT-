@@ -400,7 +400,6 @@ const handler = async (msg, { conn, text, command }) => {
 
   prepareFormatsPriority(videoUrl)
   setTimeout(() => delete pending[preview.key.id], 10 * 60 *
-setTimeout(() => delete pending[preview.key.id], 10 * 60 * 1000)
 await conn.sendMessage(msg.key.remoteJid, { react: { text: "✅", key: msg.key } })
 
 if (!conn._listeners) conn._listeners = {}
