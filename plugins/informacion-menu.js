@@ -2,14 +2,17 @@ import fs from 'fs'
 
 let handler = async (m, { conn, args }) => {
 
-  // === FECHA Y HORA DE CDMX ===
   let d = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Mexico_City" }))
   let locale = 'es'
   let week = d.toLocaleDateString(locale, { weekday: 'long' })
   let date = d.toLocaleDateString(locale, { day: 'numeric', month: 'long', year: 'numeric' })
-  let hourNow = d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
 
-  // === DATOS DEL USUARIO ===
+  let hourNow = d.toLocaleTimeString('es-MX', { 
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true 
+  }).replace('a. m.', 'A.M').replace('p. m.', 'P.M').replace('a. m.', 'A.M').replace('p. m.', 'P.M')
+
   let userId = m.mentionedJid?.[0] || m.sender
   let user = global.db.data.users[userId]
   let name = conn.getName(userId)
@@ -17,8 +20,10 @@ let handler = async (m, { conn, args }) => {
   let _uptime = process.uptime() * 1000
   let uptime = clockString(_uptime)
 
-  // === SALUDO SEGÚN LA HORA (CDMX) ===
-  let hourNum = parseInt(d.toLocaleTimeString('es-MX', { hour: 'numeric', hour12: false }))
+  let hourNum = parseInt(
+    d.toLocaleTimeString('es-MX', { hour: 'numeric', hour12: false })
+  )
+
   let saludo =
     hourNum < 4  ? "🌌 Aún es de madrugada... las almas rondan 👻" :
     hourNum < 7  ? "🌅 El amanecer despierta... buenos inicios ✨" :
@@ -29,8 +34,6 @@ let handler = async (m, { conn, args }) => {
     hourNum < 23 ? "🌃 Buenas noches... que los espíritus te cuiden 🌙" :
     "🌑 Es medianoche... los fantasmas susurran en la oscuridad 👀"
 
-
-  // === CATEGORÍAS DE COMANDOS ===
   let categories = {}
   for (let plugin of Object.values(global.plugins)) {
     if (!plugin.help || !plugin.tags) continue
@@ -43,20 +46,18 @@ let handler = async (m, { conn, args }) => {
   let decoEmojis = ['🌙', '👻', '🪄', '🏮', '📜', '💫', '😈', '🍡', '🔮', '🌸', '🪦', '✨']
   let emojiRandom = () => decoEmojis[Math.floor(Math.random() * decoEmojis.length)]
 
-  // === MENÚ ===
   let menuText = `
 \`\`\`${week}, ${date}\`\`\`
 ⏰ *Hora CDMX:* ${hourNow}
 
-👋🏻 𝖧𝗈𝗅𝖺 @${userId.split('@')[0]}  
-𝖻𝗂𝖾𝗇𝗏𝖾𝗇𝗂𝖽𝗈 𝖺𝗅 𝗆𝖾𝗇𝗎𝗀𝗋𝗎𝗉𝗈 𝖽𝖾 *𝖻𝖺𝗄𝗂-𝖡𝗈𝗍 𝖨𝖠*
+👋🏻 Hola @${userId.split('@')[0]}
+Bienvenido al menú de *Baki-Bot IA*
 
-[ ☀︎ ] Tiempo observándote: ${uptime}
+Tiempo activo: ${uptime}
 
 ${saludo}
 `.trim()
 
-  // === LISTAS DE COMANDOS ===
   for (let [tag, cmds] of Object.entries(categories)) {
     let tagName = tag.toUpperCase().replace(/_/g, ' ')
     let deco = emojiRandom()
@@ -67,21 +68,15 @@ ${cmds.map(cmd => `│ ▪️ ${cmd}`).join('\n')}
 ╰─━━━━━━━━━━━╯`
   }
 
-  // === ENVÍO DEL MENÚ ===
   await conn.sendMessage(
     m.chat,
     {
       video: { url: "https://cdn.russellxz.click/a1fe9136.mp4" },
       caption: menuText,
       gifPlayback: true,
-
-      // ← global.rcanal sin romper nada
       ...(global.rcanal || {}),
-
       contextInfo: {
         ...(global.rcanal?.contextInfo || {}),
-
-        // ← Mención real
         mentionedJid: [userId]
       }
     },
