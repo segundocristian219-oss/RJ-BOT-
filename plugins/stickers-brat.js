@@ -1,57 +1,57 @@
-import { sticker } from '../lib/sticker.js'
-import axios from 'axios'
 
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms))
-
-const fetchSticker = async (text, attempt = 1) => {
-    try {
-        const response = await axios.get(`https://api.ownblox.biz.id/api/brat`, {
-            params: { text },
-            responseType: 'arraybuffer',
-        })
-        return response.data
-    } catch (error) {
-        if (error.response?.status === 429 && attempt <= 3) {
-            const retryAfter = error.response.headers['retry-after'] || 5
-            await delay(retryAfter * 1000)
-            return fetchSticker(text, attempt + 1)
-        }
-        throw error
-    }
+const handler = async (m, { conn, text }) => {
+if (!text && m.quoted?.text) {
+text = m.quoted.text
 }
 
-let handler = async (m, { conn, text }) => {
-    if (m.quoted && m.quoted.text) {
-        text = m.quoted.text
-    } else if (!text) {
-        return conn.sendMessage(m.chat, {
-            text: `❀ Por favor, responde a un mensaje o ingresa un texto para crear el Sticker.`,
-        }, { quoted: m })
-    }
-
-    try {
-        const buffer = await fetchSticker(text)
-        let userId = m.sender
-        let packstickers = global.db.data.users[userId] || {}
-        let texto1 = packstickers.text1 || global.packsticker
-        let texto2 = packstickers.text2 || global.packsticker2
-
-        let stiker = await sticker(buffer, false, texto1, texto2)
-
-        if (stiker) {
-            return conn.sendFile(m.chat, stiker, 'sticker.webp', '', m)
-        } else {
-            throw new Error("✧ No se pudo generar el sticker.")
-        }
-    } catch (error) {
-        return conn.sendMessage(m.chat, {
-            text: `⚠︎ Ocurrió un error: ${error.message}`,
-        }, { quoted: m })
-    }
+if (!text) {
+return conn.sendMessage(
+m.chat,
+{
+text: 𝖠𝗀𝗋𝖾𝗀𝖺 𝖳𝖾𝗑𝗍𝗈 𝖮 𝖱𝖾𝗌𝗉𝗈𝗇𝖽𝖾 𝖠 𝖴𝗇 𝖬𝖾𝗇𝗌𝖺𝗃𝖾 𝖯𝖺𝗋𝖺 𝖢𝗋𝖾𝖺𝗋 𝖤𝗅 𝖲𝗍𝗂𝖼𝗄𝖾𝗋 𝖡𝗋𝖺𝗍,
+...global.rcanal
+},
+{ quoted: m }
+)
 }
 
-handler.command = ['brat']
-handler.tags = ['sticker']
-handler.help = ['brat *<texto>*']
+try {
+await conn.sendMessage(m.chat, { react: { text: "🕒", key: m.key } })
+
+const url = `https://canvas-8zhi.onrender.com/api/brat2?texto=${encodeURIComponent(texto)}`  
+
+await conn.sendMessage(  
+  m.chat,  
+  {  
+    sticker: { url },  
+    packname: "",  
+    author: "",  
+    ...global.rcanal  
+  },  
+  { quoted: m }  
+)  
+
+await conn.sendMessage(m.chat, { react: { text: "✅", key: m.key } })
+
+} catch (e) {
+console.error(e)
+
+await conn.sendMessage(m.chat, { react: { text: "❌", key: m.key } })  
+
+return conn.sendMessage(  
+  m.chat,  
+  {  
+    text: '𝖮𝖼𝗎𝗋𝗋𝗂𝗈 𝖴𝗇 𝖤𝗋𝗋𝗈𝗋 𝖠𝗅 𝖦𝖾𝗇𝖾𝗋𝖺𝗋 𝖤𝗅 𝖲𝗍𝗂𝖼𝗄𝖾𝗋',  
+    ...global.rcanal  
+  },  
+  { quoted: m }  
+)
+
+}
+}
+
+handler.command = /^brat$/i
+handler.help = ["brat <texto>"]
+handler.tags = ["sticker"]
 
 export default handler
