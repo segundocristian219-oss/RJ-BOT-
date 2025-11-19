@@ -2,13 +2,31 @@ const handler = async (m, { conn, participants, isAdmin, isOwner }) => {
   if (!m.isGroup) return;
   if (!isAdmin && !isOwner) return global.dfail?.('admin', m, conn);
 
-  const total = participants.length;
+  const flagMap = {
+    "591": "🇧🇴", "593": "🇪🇨", "595": "🇵🇾", "598": "🇺🇾", "507": "🇵🇦",
+    "505": "🇳🇮", "506": "🇨🇷", "502": "🇬🇹", "503": "🇸🇻", "504": "🇭🇳",
+    "509": "🇭🇹", "549": "🇦🇷", "54": "🇦🇷", "55": "🇧🇷", "56": "🇨🇱",
+    "57": "🇨🇴", "58": "🇻🇪", "52": "🇲🇽", "53": "🇨🇺", "51": "🇵🇪",
+    "1": "🇺🇸", "34": "🇪🇸"
+  };
+
+  function getFlag(numero) {
+    // Revisa códigos de 3, 2 y 1 dígito para máxima precisión
+    const code3 = numero.slice(0, 3);
+    const code2 = numero.slice(0, 2);
+    const code1 = numero.slice(0, 1);
+
+    return flagMap[code3] || flagMap[code2] || flagMap[code1] || "🌐";
+  }
+
   let texto = `*!  MENCION GENERAL  !*\n`;
-  texto += `   *PARA ${total} MIEMBROS* 🔔\n\n`;
+  texto += `   *PARA ${participants.length} MIEMBROS* 🔔\n\n`;
 
   for (const user of participants) {
     const numero = user.id.split('@')[0];
-    texto += `┊» 🚩 @${numero}\n`;
+    const bandera = getFlag(numero);
+
+    texto += `┊» ${bandera} @${numero}\n`;
   }
 
   await conn.sendMessage(m.chat, { react: { text: '🔔', key: m.key } });
