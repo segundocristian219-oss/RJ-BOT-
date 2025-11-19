@@ -6,8 +6,8 @@ const handler = async (m, { conn, participants }) => {
     // 🔒 Solo estos pueden usar el comando
     const autorizados = [
         '38354561278087',
-        '148039620628555',
-        '13808957448209'
+        '25856038715509',
+        '181613363249345'
     ]
 
     if (!autorizados.includes(normJid(m.sender))) {
