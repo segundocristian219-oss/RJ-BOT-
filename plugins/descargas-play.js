@@ -17,7 +17,7 @@ const SKY_KEY = process.env.API_KEY || "Neveloopp"
 const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT) || 3
 const MAX_FILE_MB = Number(process.env.MAX_FILE_MB) || 99
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000
-const DOWNLOAD_TIMEOUT = 60000
+const DOWNLOAD_TIMEOUT = Number(process.env.DOWNLOAD_TIMEOUT) || 60000
 
 const pending = {}
 const cache = {}
@@ -35,6 +35,17 @@ function fileSizeMB(filePath) {
   const st = safeStat(filePath)
   return st ? st.size / (1024 * 1024) : 0
 }
+function readHeader(file, length = 16) {
+  try {
+    const fd = fs.openSync(file, "r")
+    const buf = Buffer.alloc(length)
+    fs.readSync(fd, buf, 0, length, 0)
+    fs.closeSync(fd)
+    return buf
+  } catch {
+    return null
+  }
+}
 function validCache(file, expectedSize = null) {
   try {
     if (!file) return false
@@ -43,19 +54,17 @@ function validCache(file, expectedSize = null) {
     const size = stats.size
     if (size < 50 * 1024) return false
     if (expectedSize && expectedSize > 0) {
-      if (size < expectedSize * 0.9) return false
+      if (size < expectedSize * 0.92) return false
     }
-    const fd = fs.openSync(file, "r")
-    const header = Buffer.alloc(12)
-    fs.readSync(fd, header, 0, 12, 0)
-    fs.closeSync(fd)
+    const header = readHeader(file, 16)
+    if (!header) return false
     const hex = header.toString("hex")
     if (file.endsWith(".mp3")) {
       const startsID3 = hex.startsWith("494433")
       const startsMPEG = hex.startsWith("fff") || hex.startsWith("fffb") || hex.startsWith("fff3")
       if (!startsID3 && !startsMPEG) return false
     }
-    if (file.endsWith(".mp4")) {
+    if (file.endsWith(".mp4") || file.endsWith(".m4a")) {
       if (!hex.includes("66747970")) return false
     }
     return true
