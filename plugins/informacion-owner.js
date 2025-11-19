@@ -33,7 +33,7 @@ let handler = async (m, { conn }) => {
     {
       name: '𝖱𝖾𝗒𝖾𝗌 🫅',
       desc: '𝖨𝗇𝗏𝖾𝗋𝗌𝗂𝗈𝗇𝗂𝗌𝗍𝖺 𝖯𝗋𝗂𝗇𝖼𝗂𝗉𝖺𝗅 𝖣𝖾 𝖫𝗈𝗌 𝖭𝗎𝗆𝖾𝗋𝗈𝗌 𝖯𝖺𝗋𝖺 𝖠𝖼𝗍𝗂𝗏𝖺𝗋 𝖤𝗅 𝖡𝗈𝗍 🗣️',
-      image: 'https://cdn.russellxz.click/7f8e29e1.jpeg',
+      image: 'https://cdn.russellxz.click/24a3b428.jpeg',
       buttons: [
         { name: 'WhatsApp', url: 'https://wa.me/5218991555766' }
       ]
