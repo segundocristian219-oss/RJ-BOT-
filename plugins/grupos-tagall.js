@@ -6,7 +6,7 @@ const handler = async (msg, { conn }) => {
     const isGroup = chatId.endsWith("@g.us");
     const isFromMe = !!msg.key.fromMe;
 
-    await conn.sendMessage(chatId, { react: { text: "🔊", key: msg.key } }).catch(() => {});
+    await conn.sendMessage(chatId, { react: { text: "🗣️", key: msg.key } }).catch(() => {});
 
     if (!isGroup) {
       return conn.sendMessage(chatId, { 
@@ -72,7 +72,7 @@ const handler = async (msg, { conn }) => {
 
     let texto = `*!  MENCION GENERAL  !*\n`;
     texto += `   *PARA ${total} MIEMBROS* 🔊\n\n`;
-    texto += mentionIds.map(id => `➤ @${id.split("@")[0]}`).join("\n");
+    texto += mentionIds.map(id => `┊» 🚩 @${id.split("@")[0]}`).join("\n");
 
     await conn.sendMessage(chatId, { text: texto, mentions: mentionIds }, { quoted: msg });
 
