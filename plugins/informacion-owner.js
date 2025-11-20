@@ -92,7 +92,6 @@ let handler = async (m, { conn }) => {
   await conn.relayMessage(m.chat, slideMessage.message, { messageId: slideMessage.key.id })
 }
 
-handler.tags = ['main']
 handler.command = handler.help = ['donar', 'owner', 'cuentasoficiales', 'creador', 'cuentas']
 
 export default handler
