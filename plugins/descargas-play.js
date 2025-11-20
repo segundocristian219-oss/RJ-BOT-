@@ -103,10 +103,11 @@ function ensureTask(videoUrl) {
   return downloadTasks[videoUrl]
 }
 
-async function startDownload(videoUrl, key, mediaUrl) {
+async function startDownload(videoUrl, key, mediaUrl, forceRestart = false) {
   const tasks = ensureTask(videoUrl)
-  if (tasks[key]?.status === "done") return tasks[key].file
+
   if (tasks[key]?.status === "downloading") return tasks[key].promise
+  if (!forceRestart && tasks[key]?.status === "done") return tasks[key].file
 
   const ext = key.startsWith("audio") ? "mp3" : "mp4"
   const file = path.join(TMP_DIR, `${crypto.randomUUID()}_${key}.${ext}`)
@@ -115,12 +116,17 @@ async function startDownload(videoUrl, key, mediaUrl) {
 
   info.promise = (async () => {
     try {
-      const start = fs.existsSync(file) ? fs.statSync(file).size : 0
+      if (forceRestart) safeUnlink(tasks[key]?.file)
+      const start = 0
       const probe = await probeRemote(mediaUrl)
       const expectedSize = probe.ok && probe.size
       await queueDownload(() => downloadWithResume(mediaUrl, file, controller.signal, start))
       if (key.startsWith("audio") && path.extname(file) !== ".mp3") info.file = await convertToMp3(file)
-      if (!validCache(info.file, expectedSize)) { safeUnlink(info.file); throw new Error("Archivo inválido") }
+      if (!validCache(info.file, expectedSize)) {
+        safeUnlink(info.file)
+        // Forzar reinicio completo
+        return await startDownload(videoUrl, key, mediaUrl, true)
+      }
       if (fileSizeMB(info.file) > MAX_FILE_MB) { safeUnlink(info.file); throw new Error(`Archivo demasiado grande`) }
       info.status = "done"
       return info.file
@@ -165,9 +171,16 @@ async function handleDownload(conn, job, choice) {
     cache[id].files[key]=f
     cache[id].timestamp=Date.now()
     await sendFileToChat(conn, job.chatId, f, job.title, isDoc, type, job.commandMsg)
-  } catch(err) { await conn.sendMessage(job.chatId, { text:`❌ Error: ${err?.message||err}` }, { quoted: job.commandMsg }) }
+  } catch(err) {
+    // Si ocurre invalid file, reiniciamos
+    if(err.message?.includes("Archivo inválido")) {
+      await startDownload(id, key, mediaUrl, true)
+    }
+    await conn.sendMessage(job.chatId, { text:`❌ Error: ${err?.message||err}` }, { quoted: job.commandMsg })
+  }
 }
 
+// Handler principal (play / clean)
 const handler = async (msg, { conn, text, command }) => {
   const pref = global.prefixes?.[0]||"."
   if (command==="clean") {
