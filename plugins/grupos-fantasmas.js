@@ -1,8 +1,41 @@
+import pkg from '@whiskeysockets/baileys'
+const { delay } = pkg
+
+let listaInactivos = {}
+
+async function actualizarParticipantes(conn, chatId) {
+    let meta = await conn.groupMetadata(chatId)
+    let participantes = meta.participants.map(v => v.id)
+
+    if (!listaInactivos[chatId]) listaInactivos[chatId] = {}
+
+    for (let user of participantes) {
+        if (!listaInactivos[chatId][user]) {
+            listaInactivos[chatId][user] = {
+                lastMessage: 0
+            }
+        }
+    }
+}
+
+async function limpiarInactivos(chatId) {
+    let ahora = Date.now()
+    let ttl = 72 * 60 * 60 * 1000
+
+    for (let user in listaInactivos[chatId]) {
+        let data = listaInactivos[chatId][user]
+        if (data.lastMessage !== 0 && ahora - data.lastMessage < ttl) {
+            delete listaInactivos[chatId][user]
+        }
+    }
+}
+
 let messageHandler = async (m, { conn }) => {
     if (!m.isGroup) return
     if (!m.sender) return
     if (m.sender === conn.user.jid) return
 
+    let tipo = m.message ? Object.keys(m.message)[0] : null
     const validMessages = [
         "conversation",
         "extendedTextMessage",
@@ -13,19 +46,26 @@ let messageHandler = async (m, { conn }) => {
         "documentMessage"
     ]
 
-    let tipo = m.message ? Object.keys(m.message)[0] : null
     if (!validMessages.includes(tipo)) return
 
     if (!global.db.data.users[m.sender]) global.db.data.users[m.sender] = {}
-
     let userData = global.db.data.users[m.sender]
 
     if (!userData.groups) userData.groups = {}
     if (!userData.groups[m.chat]) userData.groups[m.chat] = {}
 
     userData.groups[m.chat].lastMessage = Date.now()
-
     global.db.data.users[m.sender] = userData
+
+    if (!listaInactivos[m.chat]) listaInactivos[m.chat] = {}
+
+    await actualizarParticipantes(conn, m.chat)
+
+    if (listaInactivos[m.chat][m.sender]) {
+        listaInactivos[m.chat][m.sender].lastMessage = Date.now()
+    }
+
+    await limpiarInactivos(m.chat)
 }
 
 let handler = async (m, { conn, participants, command }) => {
@@ -38,19 +78,22 @@ let handler = async (m, { conn, participants, command }) => {
 
     for (let usuario of miembros) {
         if (usuario === conn.user.jid) continue
-
         let p = participants.find(u => u.id === usuario)
         if (p?.admin || p?.isAdmin || p?.isSuperAdmin) continue
 
         let dataUser = global.db.data.users[usuario]
         let lastMsg = dataUser?.groups?.[m.chat]?.lastMessage || 0
 
-        if (!lastMsg) {
+        let enLista = listaInactivos[m.chat]?.[usuario]?.lastMessage || 0
+
+        if (!lastMsg && !enLista) {
             fantasmas.push(usuario)
             continue
         }
 
-        if (ahora - lastMsg >= INACTIVIDAD) {
+        let ultimo = lastMsg || enLista
+
+        if (ahora - ultimo >= INACTIVIDAD) {
             fantasmas.push(usuario)
         }
     }
@@ -95,14 +138,12 @@ setInterval(async () => {
         let chats = Object.keys(global.db.data.chats || {})
 
         for (let id of chats) {
-            let chat = global.db.data.chats[id]
-            if (!chat || !chat.autoFantasma) continue
+            if (!global.db.data.chats[id]?.autoFantasma) continue
 
             let metadata = await conn.groupMetadata(id).catch(() => null)
             if (!metadata) continue
 
             let participants = metadata.participants
-
             const HORAS = 72
             const INACTIVIDAD = HORAS * 60 * 60 * 1000
             const ahora = Date.now()
@@ -112,14 +153,16 @@ setInterval(async () => {
 
             for (let usuario of miembros) {
                 if (usuario === conn.user.jid) continue
-
                 let p = participants.find(u => u.id === usuario)
                 if (p?.admin || p?.isAdmin || p?.isSuperAdmin) continue
 
                 let dataUser = global.db.data.users[usuario]
                 let lastMsg = dataUser?.groups?.[id]?.lastMessage || 0
+                let enLista = listaInactivos[id]?.[usuario]?.lastMessage || 0
 
-                if (!lastMsg || ahora - lastMsg >= INACTIVIDAD) {
+                let ultimo = lastMsg || enLista
+
+                if (!ultimo || ahora - ultimo >= INACTIVIDAD) {
                     fantasmas.push(usuario)
                 }
             }
