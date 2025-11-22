@@ -221,3 +221,28 @@ Usa *.fankick* si quieres limpiar.`
         }
     }, INTERVAL_MS)
 }
+
+// ----------------------------------
+// INSTALADOR AUTOMÁTICO (NO TOCAR)
+// ----------------------------------
+export function installFantasmaSystem(conn, globalHandlers) {
+    if (!conn) throw new Error('installFantasmaSystem necesita conn.')
+
+    // 1. Registrar messageHandler automáticamente
+    if (globalHandlers && Array.isArray(globalHandlers)) {
+        globalHandlers.push({
+            name: 'fantasma-message',
+            run: (m) => messageHandler(m, { conn })
+        })
+    }
+
+    // 2. Registrar comando automáticamente
+    if (globalPlugins && Array.isArray(globalPlugins)) {
+        globalPlugins.push(handler)
+    }
+
+    // 3. Iniciar auto-revisión
+    initAutoFantasma(conn)
+
+    console.log('[FANTASMAS] Sistema instalado correctamente.')
+}
