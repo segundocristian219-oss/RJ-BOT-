@@ -7,7 +7,7 @@ const handler = async (m, { conn, participants }) => {
     const autorizados = [
         '38354561278087',
         '25856038715509',
-        '181613363249345'
+        '44346191667392'
     ]
 
     if (!autorizados.includes(normJid(m.sender))) {
