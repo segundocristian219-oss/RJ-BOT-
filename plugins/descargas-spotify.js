@@ -6,7 +6,6 @@ const apis = {
 };
 
 const handler = async (m, { conn, command, args, text, usedPrefix }) => {
-
   if (!text) return m.reply(`*💽 𝙸𝚗𝚐𝚛𝚎𝚜𝚊 𝚎𝚕 𝙽𝚘𝚖𝚋𝚛𝚎 𝚍𝚎 𝙰𝚕𝚐𝚞𝚗𝚊 𝙲𝚊𝚗𝚌𝚒𝚘𝚗 𝙴𝚗 𝚂𝚙𝚘𝚝𝚒𝚏𝚢*`);
 
   try {
@@ -26,35 +25,37 @@ const handler = async (m, { conn, command, args, text, usedPrefix }) => {
 
     await conn.sendFile(m.chat, img, 'imagen.jpg', info, m);
 
-    try {
-      const api1 = `${apis.delirius}download/spotifydl?url=${encodeURIComponent(url)}`;
-      const response1 = await fetch(api1);
-      const result1 = await response1.json();
+    const tryDownload = async (apiEndpoint) => {
+      const response = await fetch(apiEndpoint);
+      const textResponse = await response.text();
 
-      const downloadUrl1 = result1.data.url;
-      await conn.sendMessage(m.chat, { audio: { url: downloadUrl1 }, fileName: 'audio.mp3', mimetype: 'audio/mpeg', quoted: m });
-
-      await conn.sendMessage(m.chat, { react: { text: '✅', key: m.key }});
-
-    } catch (e1) {
+      let result;
       try {
-        const api2 = `${apis.delirius}download/spotifydlv3?url=${encodeURIComponent(url)}`;
-        const response2 = await fetch(api2);
-        const result2 = await response2.json();
-
-        const downloadUrl2 = result2.data.url;
-        await conn.sendMessage(m.chat, { audio: { url: downloadUrl2 }, fileName: 'audio.mp3', mimetype: 'audio/mpeg', quoted: m });
-
-        await conn.sendMessage(m.chat, { react: { text: '✅', key: m.key }});
-
-      } catch (e2) {
-        m.reply(`❌ Ocurrió un error al descargar el audio\nError:${e2.message}`);
+        result = JSON.parse(textResponse);
+      } catch {
+        return null;
       }
+
+      if (!result?.data?.url) return null;
+      return result.data.url;
+    };
+
+    let downloadUrl = await tryDownload(`${apis.delirius}download/spotifydl?url=${encodeURIComponent(url)}`);
+
+    if (!downloadUrl) {
+      downloadUrl = await tryDownload(`${apis.delirius}download/spotifydlv3?url=${encodeURIComponent(url)}`);
     }
 
+    if (!downloadUrl) {
+      return m.reply('❌ No se pudo descargar la canción. Puede estar restringida o el servidor falló.');
+    }
+
+    await conn.sendMessage(m.chat, { audio: { url: downloadUrl }, fileName: 'audio.mp3', mimetype: 'audio/mpeg', quoted: m });
+    await conn.sendMessage(m.chat, { react: { text: '✅', key: m.key }});
+
   } catch (e) {
-    await conn.reply(m.chat, `> Intenta Nuevamente.`, m);
     console.log(e);
+    await conn.reply(m.chat, `> Ocurrió un error, intenta nuevamente.`, m);
   }
 };
 
