@@ -22,7 +22,7 @@ const handler = async (msg, { conn, args, command }) => {
   });
 
   try {
-    const apiUrl = `https://api.neoxr.eu/api/spotify?url=${encodeURIComponent(text)}&apikey=Gatadios`;
+    const apiUrl = `https://api.neoxr.eu/api/spotify?url=${encodeURIComponent(text)}&apikey=Neveloopp`;
     const response = await fetch(apiUrl);
     if (!response.ok) throw new Error(`API error: ${response.statusText}`);
 
