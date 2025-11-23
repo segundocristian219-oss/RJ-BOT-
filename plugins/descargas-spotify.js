@@ -5,6 +5,10 @@ const apis = {
   fallback: 'https://delirius-apiofc.vercel.app/'
 };
 
+// Función auxiliar para timeout
+const timeoutPromise = (ms) =>
+  new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms));
+
 const handler = async (m, { args, conn, command, prefix }) => {
   if (!args[0]) {
     let ejemplos = ['Adele Hello', 'Sia Unstoppable', 'Maroon 5 Memories', 'Karol G Provenza', 'Natalia Jiménez Creo en mí'];
@@ -47,8 +51,11 @@ const handler = async (m, { args, conn, command, prefix }) => {
       }
     };
 
-    // Lanzar ambas APIs simultáneamente y quedarnos con la primera que devuelva audio
-    const { track, audioUrl } = await Promise.any([fetchPrimary(), fetchFallback()]);
+    // Competencia entre APIs y timeout global de 9 segundos
+    const { track, audioUrl } = await Promise.race([
+      Promise.any([fetchPrimary(), fetchFallback()]),
+      timeoutPromise(9000)
+    ]);
 
     // Enviar info
     const caption = `
@@ -68,6 +75,9 @@ const handler = async (m, { args, conn, command, prefix }) => {
 
   } catch (e) {
     console.log(e);
+    if (e.message === 'timeout') {
+      return m.reply('❌ No se pudo obtener la canción en 9 segundos. Intenta nuevamente.', m);
+    }
     m.reply('❌ No se pudo obtener la canción.', m);
   }
 };
