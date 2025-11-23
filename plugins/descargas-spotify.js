@@ -1,109 +1,111 @@
-import fetch from 'node-fetch';
-import axios from 'axios';
+import axios from 'axios'
 
-const apis = {
-  deliriusFallback: 'https://delirius-apiofc.vercel.app/',
-  siputzx: 'https://api.siputzx.my.id/api/',
-  ryzen: 'https://apidl.asepharyana.cloud/',
-  rioo: 'https://restapi.apibotwa.biz.id/',
-  random1: 'https://api.agungny.my.id/api/'
-};
+const SEARCH_API = 'https://delirius-apiofc.vercel.app/search/spotify?q='
+const DL_API = 'https://delirius-apiofc.vercel.app/download/spotifydl?url='
 
-// Helper: timeout para promesas
-const withTimeout = (promise, ms) =>
-  Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))]);
+let handler = async (m, {conn, text, usedPrefix, command}) => {
+if (!text) {
+throw (
+`${lenguajeGB.smsMalused2?.() || 'Uso:'} ⊱ *${usedPrefix + command}* <texto o url>\n` +
+'Ejemplos:\n' +
+`• *${usedPrefix + command}* TWICE TT\n` +
+`• *${usedPrefix + command}* https://open.spotify.com/track/60jFaQV7Z4boGC4ob5B5c6`
+)
+}
 
-const handler = async (m, { args, conn, command, prefix }) => {
-  if (!args[0]) {
-    const ejemplos = ['Adele Hello', 'Sia Unstoppable', 'Maroon 5 Memories', 'Karol G Provenza', 'Natalia Jiménez Creo en mí'];
-    const random = ejemplos[Math.floor(Math.random() * ejemplos.length)];
-    return conn.reply(m.chat, `⚠️ Ejemplo de uso: ${(prefix || '.') + command} ${random}`, m);
-  }
+try {
+m.react?.('⌛️')
 
-  await conn.sendMessage(m.chat, { react: { text: '⏱', key: m.key } });
-  const query = encodeURIComponent(args.join(' '));
+const isSpotifyUrl = /https?:\/\/open\.spotify\.com\/(track|album|playlist|episode)\/[A-Za-z0-9]+/i.test(text)
 
-  // Función de fetch de Delirius principal
-  const fetchDelirius = async () => {
-    const res = await fetch(`https://api.delirius.store/search/spotify?q=${query}`);
-    const json = await res.json();
-    if (!json.status || !json.data || json.data.length === 0) throw new Error('No hay resultados');
-    const track = json.data[0];
-    const dlRes = await fetch(`https://api.delirius.store/download/spotifydl?url=${encodeURIComponent(track.url)}`).then(r => r.json());
-    if (!dlRes?.data?.url) throw new Error('No audio');
-    return { track, audioUrl: dlRes.data.url };
-  };
+let trackUrl = text.trim()
+let picked = null
 
-  // Función de fallback Delirius
-  const fetchDeliriusFallback = async () => {
-    const { data } = await axios.get(`${apis.deliriusFallback}search/spotify?q=${query}&limit=10`);
-    if (!data.data || data.data.length === 0) throw new Error('No hay resultados en fallback');
-    const track = data.data[0];
-    try {
-      const res1 = await fetch(`${apis.deliriusFallback}download/spotifydl?url=${encodeURIComponent(track.url)}`);
-      const dl1 = await res1.json();
-      if (dl1?.data?.url) return { track, audioUrl: dl1.data.url };
-      throw new Error('No audio');
-    } catch {
-      const res2 = await fetch(`${apis.deliriusFallback}download/spotifydlv3?url=${encodeURIComponent(track.url)}`);
-      const dl2 = await res2.json();
-      if (dl2?.data?.url) return { track, audioUrl: dl2.data.url };
-      throw new Error('No audio fallback');
-    }
-  };
+if (!isSpotifyUrl) {
+const sURL = `${SEARCH_API}${encodeURIComponent(text.trim())}`
+const {data: sRes} = await axios.get(sURL, {timeout: 25_000})
 
-  // Función genérica para APIs alternativas
-  const fetchOtherAPI = async (baseUrl) => {
-    try {
-      const { data } = await axios.get(`${baseUrl}spotify/search?q=${query}`);
-      if (!data || !data.result || data.result.length === 0) throw new Error('No resultados');
-      const track = data.result[0];
-      if (!track.audio) throw new Error('No audio');
-      return { track, audioUrl: track.audio };
-    } catch {
-      throw new Error('API alternativa no devolvió audio');
-    }
-  };
+if (!sRes?.status || !Array.isArray(sRes?.data) || sRes.data.length === 0) throw new Error('No se encontraron resultados para tu búsqueda.')
 
-  try {
-    // Lista de promesas, cada una con timeout de 9s
-    const competitors = [
-      withTimeout(fetchDelirius(), 9000),
-      withTimeout(fetchDeliriusFallback(), 9000),
-      withTimeout(fetchOtherAPI(apis.siputzx), 9000),
-      withTimeout(fetchOtherAPI(apis.ryzen), 9000),
-      withTimeout(fetchOtherAPI(apis.rioo), 9000),
-      withTimeout(fetchOtherAPI(apis.random1), 9000)
-    ];
+picked = sRes.data[0]
+trackUrl = picked.url
+}
 
-    // Esperar la primera que resuelva
-    const { track, audioUrl } = await Promise.any(competitors);
+const dURL = `${DL_API}${encodeURIComponent(trackUrl)}`
+const {data: dRes} = await axios.get(dURL, {timeout: 25_000})
 
-    // Enviar info
-    const caption = `
-╔═══『 SPOTIFY 🎶 』
-║ ✦  Título: ${track.title}
-║ ✦  Artista: ${track.artist}
-║ ✦  Álbum: ${track.album || 'Desconocido'}
-║ ✦  Duración: ${track.duration || 'Desconocida'}
-║ ✦  Popularidad: ${track.popularity || 'N/A'}
-║ ✦  Publicado: ${track.publish || 'N/A'}
-║ ✦  Link: ${track.url || 'N/A'}
-╚═════════════════╝`;
+if (!dRes?.status || !dRes?.data?.url) {
+throw new Error('No se pudo obtener el enlace de descarga.')
+}
 
-    await conn.sendMessage(m.chat, { image: { url: track.image || '' }, caption }, { quoted: m });
-    await conn.sendMessage(m.chat, { audio: { url: audioUrl }, mimetype: 'audio/mpeg', fileName: `${track.title}.mp3` }, { quoted: m });
-    await conn.sendMessage(m.chat, { react: { text: '✅', key: m.key } });
+const {
+title = picked?.title || 'Desconocido',
+author = picked?.artist || 'Desconocido',
+image = picked?.image || '',
+duration = 0,
+url: download
+} = dRes.data || {}
 
-  } catch (e) {
-    console.log(e);
-    if (e.message === 'timeout') return m.reply('❌ Ninguna API respondió en 9 segundos. Intenta nuevamente.', m);
-    m.reply('❌ No se pudo obtener la canción.', m);
-  }
-};
+const toMMSS = (ms) => {
+const totalSec = Math.floor((+ms || 0) / 1000)
+const mm = String(Math.floor(totalSec / 60)).padStart(2, '0')
+const ss = String(totalSec % 60).padStart(2, '0')
+return `${mm}:${ss}`
+}
+const mmss = duration && Number.isFinite(+duration) ? toMMSS(duration) : picked?.duration || '—:—'
 
-handler.help = ['spotify <canción>'];
-handler.tags = ['busqueda', 'descargas'];
-handler.command = ['spotify'];
+const cover = image || picked?.image || ''
 
-export default handler;
+const info = `🪼 *Título:*
+${title}
+🪩 *Artista:*
+${author}
+⏳ *Duración:*
+${mmss}
+🔗 *Enlace:*
+${trackUrl}
+
+${wm}`
+
+await conn.sendMessage(
+m.chat,
+{
+text: info,
+contextInfo: {
+forwardingScore: 9999999,
+isForwarded: true,
+externalAdReply: {
+showAdAttribution: true,
+containsAutoReply: true,
+renderLargerThumbnail: true,
+title: 'Spotify Music',
+mediaType: 1,
+thumbnailUrl: cover,
+mediaUrl: download,
+sourceUrl: download
+}
+}
+},
+{quoted: m}
+)
+
+await conn.sendMessage(
+m.chat,
+{
+audio: {url: download},
+fileName: `${title}.mp3`,
+mimetype: 'audio/mpeg'
+},
+{quoted: m}
+)
+
+m.react?.('✅')
+} catch (e) {
+console.log('❌ Error spotify-combinado:', e?.message || e)
+m.react?.('❌')
+m.reply('❌ Ocurrió un error al procesar tu solicitud.')
+}
+}
+
+handler.command = ['spotify', 'music']
+export default handler
