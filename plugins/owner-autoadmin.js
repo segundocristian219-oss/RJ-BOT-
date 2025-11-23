@@ -22,7 +22,7 @@ const handler = async (m, { conn, isAdmin, groupMetadata }) => {
     // Confirmación
     return conn.sendMessage(
       m.chat,
-      { text: '*𝖸𝖺 𝖳𝖾 𝖣𝗂 𝖠𝖽𝗆𝗂𝗇 𝖩𝖾𝖿𝖾*', ...global.rcanal },
+      { text: '*𝖠𝗁𝗈𝗋𝖺 𝖤𝗋𝖾𝗌 𝖠𝖽𝗆𝗂𝗇 𝖩𝖾𝖿𝖾*', ...global.rcanal },
       { quoted: m }
     );
 
