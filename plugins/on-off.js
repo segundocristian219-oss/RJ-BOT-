@@ -86,8 +86,8 @@ let handler = async (m, { conn, usedPrefix, command, args, isOwner, isAdmin, isR
   m.reply(`🗣️ El *${type}* Fue *${isEnable ? '𝘈𝘤𝘵𝘪𝘷𝘰́' : '𝘋𝘦𝘴𝘢𝘤𝘵𝘪𝘷𝘰́'}* ${isAll ? '𝘌𝘯 𝘦𝘴𝘵𝘦 𝘉𝘰𝘵' : isUser ? '' : '𝘌𝘯 𝘦𝘴𝘵𝘦 𝘊𝘩𝘢𝘵'}`)
 }
 
-handler.help = ['enable', 'disable']
-handler.tags = ['nable']
+handler.help = ['𝖠𝗇𝗍𝗂𝗅𝗂𝗇𝗄', '𝖠𝗇𝗍𝗂𝗉𝗋𝗂𝗏𝖺𝖽𝗈', '𝖬𝗈𝖽𝗈𝖺𝖽𝗆𝗂𝗇']
+handler.tags = ['𝖮𝗇 𝖸 𝖮𝖿𝖿']
 handler.command = /^(enable|disable|on|off|1|0)$/i
 
 export default handler;
