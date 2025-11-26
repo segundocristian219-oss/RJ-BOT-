@@ -219,7 +219,8 @@ const handler = async(msg,{conn,text,command})=>{
     title,
     commandMsg: msg,
     sender: msg.key.participant || msg.participant,
-    downloading: false,
+    // Reemplazamos 'downloading' por un lock atómico
+    lock: false,
     time: Date.now(),
     listener: null
   }
@@ -239,39 +240,49 @@ const handler = async(msg,{conn,text,command})=>{
   const listener = async ev => {
     for(const m of ev.messages||[]){
       try{
+        // --- Reacciones (tap en los emoji del preview) ---
         const react = m.message?.reactionMessage
         if(react){
           const job = pending[react.key?.id]
           if(!job) continue
           const senderId = react.sender || m.key.participant || m.key?.remoteJid
           if(senderId !== job.sender) continue
-          if(job.downloading) continue
-          job.downloading = true
+
+          // lock atómico (evita condiciones de carrera)
+          if(job.lock) continue
+          job.lock = true
           try{
             await handleDownload(conn,job,react.text)
           }finally{
-            job.downloading = false
+            job.lock = false
           }
           continue
         }
 
+        // --- Respuestas citadas (texto 1/2/3/4) ---
         const context = m.message?.extendedTextMessage?.contextInfo
         const citado = context?.stanzaId
         const texto = (m.message?.conversation || m.message?.extendedTextMessage?.text || "").toLowerCase().trim()
         if(citado && pending[citado]){
           const job = pending[citado]
-          if(job.downloading) {
-            await conn.sendMessage(m.key.remoteJid,{text:"⚠️ Ya hay una descarga en curso para este pedido."},{quoted:m})
+
+          // Si ya hay lock: avisamos y seguimos (evitamos spam: un mensaje por intento)
+          if(job.lock){
+            try{
+              await conn.sendMessage(m.key.remoteJid,{text:"⚠️ Ya hay una descarga en curso para este pedido."},{quoted:m})
+            }catch(e){}
             continue
           }
+
           const audioKeys = ["1","audio","4","audiodoc"]
           const videoKeys = ["2","video","3","videodoc"]
+
           if(audioKeys.includes(texto)){
-            job.downloading = true
-            try{ await downloadAudio(conn,job,["4","audiodoc"].includes(texto),m) }finally{ job.downloading = false }
+            job.lock = true
+            try{ await downloadAudio(conn,job,["4","audiodoc"].includes(texto),m) }finally{ job.lock = false }
           } else if(videoKeys.includes(texto)){
-            job.downloading = true
-            try{ await downloadVideo(conn,job,["3","videodoc"].includes(texto),m) }finally{ job.downloading = false }
+            job.lock = true
+            try{ await downloadVideo(conn,job,["3","videodoc"].includes(texto),m) }finally{ job.lock = false }
           } else {
             await conn.sendMessage(m.key.remoteJid,{text:"⚠️ Opciones válidas: 1/audio,4/audiodoc → audio; 2/video,3/videodoc → video"},{quoted:m})
           }
