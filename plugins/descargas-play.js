@@ -17,7 +17,7 @@ const SKY_KEY = process.env.API_KEY || "Neveloopp"
 const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT) || 89
 const MAX_FILE_MB = Number(process.env.MAX_FILE_MB) || 99
 const DOWNLOAD_TIMEOUT = Number(process.env.DOWNLOAD_TIMEOUT) || 60000
-const MAX_RETRIES = 3
+const MAX_RETRIES = 89
 
 const CLEAN_INTERVAL = 1000 * 60 * 60 * 24 * 8
 const TTL = CLEAN_INTERVAL
