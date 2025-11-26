@@ -28,7 +28,10 @@ const downloadTasks = {}
 let cache = loadCache()
 const pending = {}
 let metrics = { totalDownloads: 0, totalErrors: 0 }
+// guard global for listeners per previewId
 global.playPreviewListeners ??= {}
+// guard to avoid registering the same preview listener multiple times across loaded modules
+global.__PLAY_LISTENER_SET__ ??= {}
 
 function saveCache(){
   try{ fs.writeFileSync(CACHE_FILE,JSON.stringify(cache)) }catch(e){ console.error("saveCache:",e) }
@@ -184,8 +187,14 @@ async function sendFileToChat(conn,chatId,filePath,title,asDocument,type,quoted)
   await conn.sendMessage(chatId,{...msg,mimetype,fileName},{quoted})
 }
 
+// ----------------------- start handler -----------------------
 const handler = async(msg,{conn,text,command})=>{
   const pref = global.prefixes?.[0]||"."
+
+  // Prevent double execution of same incoming message
+  if (msg.__playProcessed) return
+  msg.__playProcessed = true
+
   if(msg?.message?.reactionMessage) return
   if(msg?.message?.protocolMessage) return
   if(msg?.key?.remoteJid === "status@broadcast") return
@@ -213,16 +222,18 @@ const handler = async(msg,{conn,text,command})=>{
 
   const preview = await conn.sendMessage(msg.key.remoteJid,{image:{url:thumbnail},caption},{quoted:msg})
 
+  // store pending job (keyed by preview id)
   pending[preview.key.id] = {
     chatId: msg.key.remoteJid,
     videoUrl,
     title,
     commandMsg: msg,
     sender: msg.key.participant || msg.participant,
-    // Reemplazamos 'downloading' por un lock atómico
+    // lock (atomic)
     lock: false,
     time: Date.now(),
-    listener: null
+    listener: null,
+    previewId: preview.key.id
   }
 
   cache[videoUrl] = cache[videoUrl] || { time: Date.now(), files: {} }
@@ -232,9 +243,10 @@ const handler = async(msg,{conn,text,command})=>{
 
   const previewId = preview.key.id
 
-  if(global.playPreviewListeners[previewId]){
-    try{ conn.ev.off("messages.upsert", global.playPreviewListeners[previewId]) }catch(e){}
-    delete global.playPreviewListeners[previewId]
+  // remove existing listener for same previewId if any
+  if(global.__PLAY_LISTENER_SET__[previewId]){
+    try{ conn.ev.off("messages.upsert", global.__PLAY_LISTENER_SET__[previewId]) }catch(e){}
+    delete global.__PLAY_LISTENER_SET__[previewId]
   }
 
   const listener = async ev => {
@@ -250,7 +262,15 @@ const handler = async(msg,{conn,text,command})=>{
 
           // lock atómico (evita condiciones de carrera)
           if(job.lock) continue
+          // set lock synchronously
           job.lock = true
+
+          // Remove listener immediately to avoid duplicates while download runs
+          try{ conn.ev.off("messages.upsert", listener) }catch(e){}
+          if(global.__PLAY_LISTENER_SET__[job.previewId]) delete global.__PLAY_LISTENER_SET__[job.previewId]
+          if(global.playPreviewListeners[job.previewId]) delete global.playPreviewListeners[job.previewId]
+          job.listener = null
+
           try{
             await handleDownload(conn,job,react.text)
           }finally{
@@ -266,7 +286,7 @@ const handler = async(msg,{conn,text,command})=>{
         if(citado && pending[citado]){
           const job = pending[citado]
 
-          // Si ya hay lock: avisamos y seguimos (evitamos spam: un mensaje por intento)
+          // If lock: reply with a single warning and continue
           if(job.lock){
             try{
               await conn.sendMessage(m.key.remoteJid,{text:"⚠️ Ya hay una descarga en curso para este pedido."},{quoted:m})
@@ -277,12 +297,25 @@ const handler = async(msg,{conn,text,command})=>{
           const audioKeys = ["1","audio","4","audiodoc"]
           const videoKeys = ["2","video","3","videodoc"]
 
-          if(audioKeys.includes(texto)){
+          if(audioKeys.includes(texto) || videoKeys.includes(texto)){
+            // set lock synchronously
             job.lock = true
-            try{ await downloadAudio(conn,job,["4","audiodoc"].includes(texto),m) }finally{ job.lock = false }
-          } else if(videoKeys.includes(texto)){
-            job.lock = true
-            try{ await downloadVideo(conn,job,["3","videodoc"].includes(texto),m) }finally{ job.lock = false }
+
+            // Remove listener immediately (so additional messages don't trigger duplicate flows)
+            try{ conn.ev.off("messages.upsert", listener) }catch(e){}
+            if(global.__PLAY_LISTENER_SET__[job.previewId]) delete global.__PLAY_LISTENER_SET__[job.previewId]
+            if(global.playPreviewListeners[job.previewId]) delete global.playPreviewListeners[job.previewId]
+            job.listener = null
+
+            try{
+              if(audioKeys.includes(texto)){
+                await handleDownload(conn,job,"1") // use same mapping as reactions
+              } else {
+                await handleDownload(conn,job,"2")
+              }
+            }finally{
+              job.lock = false
+            }
           } else {
             await conn.sendMessage(m.key.remoteJid,{text:"⚠️ Opciones válidas: 1/audio,4/audiodoc → audio; 2/video,3/videodoc → video"},{quoted:m})
           }
@@ -293,29 +326,61 @@ const handler = async(msg,{conn,text,command})=>{
 
   pending[previewId].listener = listener
   global.playPreviewListeners[previewId] = listener
+  global.__PLAY_LISTENER_SET__[previewId] = listener
   conn.ev.on("messages.upsert", listener)
 
+  // auto-expire pending/ listener after TTL
   setTimeout(()=>{
     if(pending[previewId]){
       try{ conn.ev.off("messages.upsert", pending[previewId].listener) }catch(e){}
       delete pending[previewId]
       if(global.playPreviewListeners[previewId]) delete global.playPreviewListeners[previewId]
+      if(global.__PLAY_LISTENER_SET__[previewId]) delete global.__PLAY_LISTENER_SET__[previewId]
     }
   }, TTL)
 }
+// ----------------------- end handler -----------------------
 
+// handleDownload: unified entrypoint for reaction or number
 async function handleDownload(conn,job,choice){
-  const mapping={"👍":"audio","❤️":"video","📄":"audioDoc","📁":"videoDoc"}
+  // choice can be emoji "👍","❤️","📄","📁" or numbers "1","2" (we accept both)
+  const mapping={"👍":"audio","❤️":"video","📄":"audioDoc","📁":"videoDoc","1":"audio","2":"video"}
   const key = mapping[choice]
   if(!key) return
   const isDoc = key.endsWith("Doc")
-  await conn.sendMessage(job.chatId,{text:`⏳ Descargando ${isDoc?"documento":key}…`},{quoted:job.commandMsg})
+  // same message flow: single "Descargando ..." message
+  await conn.sendMessage(job.chatId,{text:`⏳ Descargando ${isDoc?"documento":(key.startsWith("audio")?"audio":"video")}…`},{quoted:job.commandMsg})
+
+  // before downloading, check cache and re-send if exists
+  const videoUrl = job.videoUrl
+  const cachedFile = cache[videoUrl]?.files?.[ key.startsWith("audio") ? "audio" : "video" ]
+  if(cachedFile && fs.existsSync(cachedFile) && validCache(cachedFile)){
+    // react lightning and send file
+    try{ await conn.sendMessage(job.chatId,{react:{text:"⚡",key:job.commandMsg.key}}) }catch(e){}
+    await sendFileToChat(conn,job.chatId,cachedFile,job.title,isDoc,key.startsWith("audio")?"audio":"video",job.commandMsg)
+    try{ await conn.sendMessage(job.chatId,{react:{text:"✅",key:job.commandMsg.key}}) }catch(e){}
+    cleanupPendingByJob(job,conn)
+    return
+  }
+
+  // otherwise go to the real download path
   if(key.startsWith("audio")) await downloadAudio(conn,job,isDoc,job.commandMsg)
   else await downloadVideo(conn,job,isDoc,job.commandMsg)
 }
 
 async function downloadAudio(conn,job,asDocument,quoted){
   const { chatId, videoUrl, title } = job
+
+  // Check cache first (double-check in download function)
+  const cached = cache[videoUrl]?.files?.audio
+  if(cached && fs.existsSync(cached) && validCache(cached)){
+    try{ await conn.sendMessage(chatId,{react:{text:"⚡",key:quoted.key}}) }catch(e){}
+    await sendFileToChat(conn,chatId,cached,title,asDocument,"audio",quoted)
+    try{ await conn.sendMessage(chatId,{react:{text:"✅",key:quoted.key}}) }catch(e){}
+    cleanupPendingByJob(job,conn)
+    return
+  }
+
   const data = await getSkyApiUrl(videoUrl,"audio")
   if(!data) return conn.sendMessage(chatId,{text:"❌ No se pudo obtener audio."},{quoted})
   const k = taskKey(videoUrl,"audio")
@@ -336,6 +401,7 @@ async function downloadAudio(conn,job,asDocument,quoted){
 
     await sendFileToChat(conn,chatId,file,title,asDocument,"audio",quoted)
 
+    // update cache metadata (save path)
     cache[videoUrl] = cache[videoUrl] || { time: Date.now(), files: {} }
     cache[videoUrl].time = Date.now()
     cache[videoUrl].files.audio = file
@@ -350,6 +416,17 @@ async function downloadAudio(conn,job,asDocument,quoted){
 
 async function downloadVideo(conn,job,asDocument,quoted){
   const { chatId, videoUrl, title } = job
+
+  // Check cache first
+  const cached = cache[videoUrl]?.files?.video
+  if(cached && fs.existsSync(cached) && validCache(cached)){
+    try{ await conn.sendMessage(chatId,{react:{text:"⚡",key:quoted.key}}) }catch(e){}
+    await sendFileToChat(conn,chatId,cached,title,asDocument,"video",quoted)
+    try{ await conn.sendMessage(chatId,{react:{text:"✅",key:quoted.key}}) }catch(e){}
+    cleanupPendingByJob(job,conn)
+    return
+  }
+
   const data = await getSkyApiUrl(videoUrl,"video")
   if(!data) return conn.sendMessage(chatId,{text:"❌ No se pudo obtener video."},{quoted})
   const k = taskKey(videoUrl,"video")
@@ -370,6 +447,7 @@ async function downloadVideo(conn,job,asDocument,quoted){
 
     await sendFileToChat(conn,chatId,file,title,asDocument,"video",quoted)
 
+    // update cache metadata
     cache[videoUrl] = cache[videoUrl] || { time: Date.now(), files: {} }
     cache[videoUrl].time = Date.now()
     cache[videoUrl].files.video = file
@@ -390,6 +468,7 @@ function cleanupPendingByJob(job,conn){
         try{ if(p.listener) conn.ev.off("messages.upsert", p.listener) }catch(e){}
         delete pending[id]
         if(global.playPreviewListeners[id]) delete global.playPreviewListeners[id]
+        if(global.__PLAY_LISTENER_SET__[id]) delete global.__PLAY_LISTENER_SET__[id]
       }
     }
   }catch(e){ console.error("cleanupPendingByJob",e) }
@@ -421,39 +500,4 @@ function autoClean(){
   Object.values(downloadTasks).forEach(t => {
     try{
       if(t && t.meta && t.meta.tmpFile) activeTmpFiles.add(t.meta.tmpFile)
-      if(t && t.file) activeTmpFiles.add(t.file)
-    }catch(e){}
-  })
-
-  for (const f of files) {
-    const full = path.join(TMP_DIR, f)
-    try {
-      const stat = fs.statSync(full)
-      if (now - stat.mtimeMs > TTL && !activeTmpFiles.has(full)) {
-        try{ freed += stat.size }catch{}
-        safeUnlink(full)
-        deleted++
-      }
-    } catch {}
-  }
-
-  for (const id of Object.keys(pending)){
-    const p = pending[id]
-    if (!p || (p.time && now - p.time > TTL)){
-      try{ if(p.listener) global.conn?.ev.off("messages.upsert", p.listener) }catch(e){}
-      delete pending[id]
-      if(global.playPreviewListeners[id]) delete global.playPreviewListeners[id]
-    }
-  }
-
-  saveCache()
-  console.log(`AutoClean → borrados ${deleted} archivos, ${(freed/1024/1024).toFixed(2)} MB liberados.`)
-}
-
-setInterval(autoClean, CLEAN_INTERVAL)
-global.autoclean = autoClean
-
-handler.help=["𝖯𝗅𝖺𝗒 <𝖳𝖾𝗑𝗍𝗈>"]
-handler.tags=["𝖣𝖤𝖲𝖢𝖠𝖱𝖦𝖠𝖲"]
-handler.command=["play","clean"]
-export default handler
+      if(t && t.file) activeTmp
