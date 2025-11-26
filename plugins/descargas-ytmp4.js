@@ -3,7 +3,8 @@ import axios from "axios";
 const API_BASE = process.env.API_BASE || "https://api-sky.ultraplus.click";
 const API_KEY  = process.env.API_KEY  || "Russellxz";
 
-const AXIOS_TIMEOUT = 0;
+// Timeout real
+const AXIOS_TIMEOUT = 60000; // 60s
 axios.defaults.timeout = AXIOS_TIMEOUT;
 axios.defaults.maxBodyLength = Infinity;
 axios.defaults.maxContentLength = Infinity;
@@ -84,6 +85,7 @@ async function callSkyYtVideo(url){
   throw lastErr || new Error("No se pudo obtener el video.");
 }
 
+
 const handler = async (msg, { conn, args, command }) => {
   const jid  = msg.key.remoteJid;
   const url  = (args.join(" ") || "").trim();
@@ -127,20 +129,31 @@ Elige cómo enviarlo:
       selectorMsg = await conn.sendMessage(jid, { text: caption }, { quoted: msg });
     }
 
+    // Guardar tarea con expiración
     pendingYTV[selectorMsg.key.id] = {
       chatId: jid,
       mediaUrl,
       title,
-      baseMsg: msg
+      duration: dur,
+      baseMsg: msg,
+      expire: Date.now() + 5 * 60 * 1000 // 5 minutos
     };
 
     await conn.sendMessage(jid, { react: { text: "✅", key: msg.key } });
 
-    if (!conn._ytvListener) {
-      conn._ytvListener = true;
+
+    // Activar listener una sola vez
+    if (!conn._ytvListenerActive) {
+      conn._ytvListenerActive = true;
+
       conn.ev.on("messages.upsert", async (ev) => {
         for (const m of ev.messages) {
           try {
+            // limpieza automática
+            for (const id in pendingYTV) {
+              if (Date.now() > pendingYTV[id].expire) delete pendingYTV[id];
+            }
+
             if (m.message?.reactionMessage) {
               const { key: reactedKey, text: emoji } = m.message.reactionMessage;
               const job = pendingYTV[reactedKey.id];
@@ -154,8 +167,10 @@ Elige cómo enviarlo:
             const ctx = m.message?.extendedTextMessage?.contextInfo;
             const replyTo = ctx?.stanzaId;
             const txt = (m.message?.conversation || m.message?.extendedTextMessage?.text || "").trim().toLowerCase();
+
             if (replyTo && pendingYTV[replyTo]) {
               const job = pendingYTV[replyTo];
+
               if (txt === "1" || txt === "2") {
                 const asDoc = txt === "2";
                 await sendVideo(conn, job, asDoc, m);
@@ -182,8 +197,9 @@ Elige cómo enviarlo:
   }
 };
 
+
 async function sendVideo(conn, job, asDocument, triggerMsg){
-  const { chatId, mediaUrl, title, baseMsg } = job;
+  const { chatId, mediaUrl, title, duration, baseMsg } = job;
 
   await conn.sendMessage(chatId, { react: { text: asDocument ? "📁" : "🎬", key: triggerMsg.key } });
   await conn.sendMessage(chatId, { text: `⏳ Enviando ${asDocument ? "como documento" : "video"}…` }, { quoted: baseMsg });
@@ -192,6 +208,7 @@ async function sendVideo(conn, job, asDocument, triggerMsg){
 `⚡ 𝗬𝗼𝘂𝗧𝘂𝗯𝗲 𝗩𝗶𝗱𝗲𝗼 — 𝗟𝗶𝘀𝘁𝗼
 
 ✦ 𝗧𝗶́𝘁𝘂𝗹𝗼: ${title}
+✦ 𝗗𝘂𝗿𝗮𝗰𝗶𝗼́𝗻: ${duration}
 ✦ 𝗦𝗼𝘂𝗿𝗰𝗲: api-sky.ultraplus.click
 `;
 
@@ -213,7 +230,8 @@ async function sendVideo(conn, job, asDocument, triggerMsg){
   await conn.sendMessage(chatId, { react: { text: "✅", key: triggerMsg.key } });
 }
 
-handler.help = ["𝖸𝗍𝗆𝗉4 <𝗎𝗋𝗅>"]
-handler.tags = ["𝖣𝖤𝖲𝖢𝖠𝖱𝖦𝖠𝖲"]
+handler.help = ["𝖸𝗍𝗆𝗉4 <𝗎𝗋𝗅>"];
+handler.tags = ["𝖣𝖤𝖲𝖢𝖠𝖱𝖦𝖠𝖲"];
 handler.command = ["ytmp4","ytv"];
+
 export default handler;
