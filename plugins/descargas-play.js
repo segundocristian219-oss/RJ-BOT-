@@ -240,5 +240,4 @@ async function downloadVideo(conn, job, asDocument, quoted) {
   try { fs.unlinkSync(file) } catch {}
 }
 
-handler.command = ["play"];
-export default handler;
+export const command = ["play"]
