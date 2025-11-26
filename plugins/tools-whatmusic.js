@@ -1,233 +1,125 @@
-import fs from 'fs'
-import path from 'path'
-import axios from 'axios'
-import ffmpeg from 'fluent-ffmpeg'
-import FormData from 'form-data'
-import { promisify } from 'util'
-import { pipeline } from 'stream'
+import acrcloud from 'acrcloud'
 import yts from 'yt-search'
-import { fileURLToPath } from 'url'
+import fetch from 'node-fetch'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+let acr = new acrcloud({
+  host: 'identify-eu-west-1.acrcloud.com',
+  access_key: 'c33c767d683f78bd17d4bd4991955d81',
+  access_secret: 'bvgaIAEtADBTbLwiPGYlxupWqkNGIjT7J9Ag2vIu'
+})
 
-const streamPipeline = promisify(pipeline)
-
-const CDN_UPLOAD = 'https://cdn.russellxz.click/upload.php'
-const NEOXR_KEY = 'Neveloopp'
-
-function unwrapMessage(m) {
-  let n = m
-  while (
-    n?.viewOnceMessage?.message ||
-    n?.viewOnceMessageV2?.message ||
-    n?.viewOnceMessageV2Extension?.message ||
-    n?.ephemeralMessage?.message
-  ) {
-    n =
-      n.viewOnceMessage?.message ||
-      n.viewOnceMessageV2?.message ||
-      n.viewOnceMessageV2Extension?.message ||
-      n.ephemeralMessage?.message
-  }
-  return n
-}
-
-function getQuoted(msg) {
-  const root = unwrapMessage(msg?.message) || {}
-  const ci =
-    root?.extendedTextMessage?.contextInfo ||
-    root?.imageMessage?.contextInfo ||
-    root?.videoMessage?.contextInfo ||
-    root?.audioMessage?.contextInfo ||
-    root?.documentMessage?.contextInfo ||
-    root?.stickerMessage?.contextInfo ||
-    null
-  return ci?.quotedMessage ? unwrapMessage(ci.quotedMessage) : null
-}
-
-function extFromMime(m) {
-  if (!m) return null
-  m = String(m).toLowerCase()
-  const map = {
-    'audio/mpeg': 'mp3',
-    'audio/mp4': 'm4a',
-    'audio/aac': 'aac',
-    'audio/ogg': 'ogg',
-    'audio/webm': 'webm',
-    'video/mp4': 'mp4',
-    'video/webm': 'webm',
-    'video/quicktime': 'mov'
-  }
-  return map[m] || null
-}
-
-async function downloadToFile(DL, node, type, outPath) {
-  const stream = await DL(node, type)
-  const ws = fs.createWriteStream(outPath)
-  for await (const chunk of stream) ws.write(chunk)
-  ws.end()
-  await new Promise(r => ws.on('finish', r))
-}
-
-function safeUnlink(p) {
-  try { if (p && fs.existsSync(p)) fs.unlinkSync(p) } catch {}
-}
-
-function slug(s) {
-  return String(s || '')
-    .normalize('NFKD')
-    .replace(/[^\w\s.-]/g, '')
-    .trim()
-    .replace(/\s+/g, '_')
-    .slice(0, 80) || `song_${Date.now()}`
-}
-
-const handler = async (msg, { conn, wa }) => {
-
-  const DL = (wa && typeof wa.downloadContentFromMessage === 'function')
-    ? wa.downloadContentFromMessage
-    : (await import('@whiskeysockets/baileys')).downloadContentFromMessage
-
-  const chatId = msg.key.remoteJid
-
-  let usedPrefix = '.'
+let handler = async (m, { conn, usedPrefix, command }) => {
   try {
-    const rawID = conn.user?.id || ''
-    const subbotID = rawID.split(':')[0] + '@s.whatsapp.net'
-    const prefixPath = path.resolve('prefixes.json')
-    if (fs.existsSync(prefixPath)) {
-      const pf = JSON.parse(fs.readFileSync(prefixPath, 'utf-8'))
-      usedPrefix = pf[subbotID] || '.'
+    let q = m.quoted ? m.quoted : m
+    let mime = (q.msg || q).mimetype || q.mediaType || ''
+    if (!/video|audio/.test(mime)) {
+      return conn.reply(
+        m.chat,
+        `${emoji} Etiqueta un *audio* o *video corto* con *${usedPrefix + command}* para identificar la música.`,
+        m,
+        rcanal
+      )
     }
-  } catch {}
 
-  const q = getQuoted(msg)
-  const qAudio = q?.audioMessage || null
-  const qVideo = q?.videoMessage || null
+    let buffer = await q.download()
+    if (!buffer) {
+      return conn.reply(m.chat, '❌ No pude descargar el archivo.', m, rcanal)
+    }
 
-  if (!qAudio && !qVideo) {
-    await conn.sendMessage(chatId, {
-      text: `✳️ Responde a una nota de voz, audio o video para identificar la canción.\n\nEjemplo: ${usedPrefix}whatmusic`
-    }, { quoted: msg })
-    return
-  }
+    let duration = q.seconds || 0
+    if (duration > 40) {
+      return conn.reply(
+        m.chat,
+        `⚠️ El archivo solo puede durar *40 segundos máximo*. El que enviaste dura *${duration}s*.`,
+        m,
+        rcanal
+      )
+    }
 
-  try { await conn.sendMessage(chatId, { react: { text: '🔍', key: msg.key } }) } catch {}
+    const res = await fetch('https://files.catbox.moe/64ots5.png')
+    const thumb2 = Buffer.from(await res.arrayBuffer())
 
-  const tmpDir = path.join(__dirname, '../tmp')
-  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
+    const fkontak = {
+      key: {
+        participants: '0@s.whatsapp.net',
+        remoteJid: 'status@broadcast',
+        fromMe: false,
+        id: 'Halo'
+      },
+      message: {
+        locationMessage: {
+          name: `𝗥𝗘𝗦𝗨𝗟𝗧𝗔𝗗𝗢𝗦 𝗗𝗘 𝗔𝗖𝗥𝗖𝗟𝗢𝗨𝗗`,
+          jpegThumbnail: thumb2
+        }
+      },
+      participant: '0@s.whatsapp.net'
+    }
 
-  let inputPath, rawExt, mime, type
+    let result = await acr.identify(buffer)
 
-  try {
-    type = qAudio ? 'audio' : 'video'
-    mime = (qAudio || qVideo).mimetype || (qAudio ? 'audio/mpeg' : 'video/mp4')
-    rawExt = extFromMime(mime) || (qAudio ? 'mp3' : 'mp4')
-    inputPath = path.join(tmpDir, `${Date.now()}_in.${rawExt}`)
+    if (!result || !result.status) {
+      throw new Error('Respuesta inválida del servidor ACRCloud.')
+    }
 
-    await downloadToFile(DL, qAudio || qVideo, type, inputPath)
+    let { status, metadata } = result
 
-    const form = new FormData()
-    form.append('file', fs.createReadStream(inputPath))
-    form.append('expiry', '3600')
+    if (status.code !== 0) {
+      return conn.reply(m.chat, `❌ ${status.msg}`, m, rcanal)
+    }
 
-    const up = await axios.post(CDN_UPLOAD, form, {
-      headers: form.getHeaders(),
-      timeout: 120000
-    })
+    if (!metadata || !metadata.music || metadata.music.length === 0) {
+      return conn.reply(m.chat, '❌ No se pudo identificar la música.', m, rcanal)
+    }
 
-    if (!up.data?.url) throw new Error('No se pudo subir al CDN.')
+    let music = metadata.music[0]
+    let { title, artists, album, genres, release_date } = music
 
-    const fileUrl = up.data.url
+    let txt = '┏╾❑「 *Whatmusic Tools* 」\n'
+    txt += `┃  ≡◦ *Título ∙* ${title || 'Desconocido'}\n`
+    if (artists) txt += `┃  ≡◦ *Artista ∙* ${artists.map(v => v.name).join(', ')}\n`
+    if (album) txt += `┃  ≡◦ *Álbum ∙* ${album.name}\n`
+    if (genres) txt += `┃  ≡◦ *Género ∙* ${genres.map(v => v.name).join(', ')}\n`
+    txt += `┃  ≡◦ *Fecha de lanzamiento ∙* ${release_date || 'Desconocida'}\n`
 
-    const apiURL = `https://api.neoxr.eu/api/whatmusic?url=${encodeURIComponent(fileUrl)}&apikey=${NEOXR_KEY}`
 
-    const res = await axios.get(apiURL, { timeout: 120000 })
-    if (!res.data?.status || !res.data?.data) throw new Error('No se pudo identificar la canción.')
+    const searchResults = await yts.search(title).catch(() => null)
 
-    const { title, artist, album, release } = res.data.data
+    if (searchResults && searchResults.videos && searchResults.videos.length > 0) {
+      const video = searchResults.videos[0]
+      const { url, title: ytTitle, author, views, timestamp, thumbnail } = video
 
-    const yt = await yts(`${title} ${artist}`)
-    const video = yt?.videos?.[0]
-    if (!video) throw new Error('No se encontró la canción en YouTube.')
+      txt += `┃  ≡◦ *YouTube:* ${ytTitle}\n`
+      txt += `┃  ≡◦ *Canal:* ${author?.name || 'Desconocido'}\n`
+      txt += `┃  ≡◦ *Vistas:* ${views}\n`
+      txt += `┃  ≡◦ *Duración:* ${timestamp}\n`
+      txt += `┃  ≡◦ *URL del video:* ${url}\n`
+      txt += `┗╾❑`
 
-    const banner =
-`╔══════════════════╗
-║ 
-╚══════════════════╝
+      const thumbRes = await fetch(thumbnail)
+      const thumbBuffer = Buffer.from(await thumbRes.arrayBuffer())
 
-🎵 Canción detectada
-📌 Título: ${title}
-👤 Artista: ${artist}
-💿 Álbum: ${album || '-'}
-📅 Lanzamiento: ${release || '-'}
-🔎 Coincidencia: ${video.title}
-⏱️ Duración: ${video.timestamp}
-👁️ Vistas: ${Number(video.views || 0).toLocaleString()}
-📺 Canal: ${video.author?.name || '-'}
-🔗 Link: ${video.url}
+      await conn.sendMessage(
+        m.chat,
+        { image: thumbBuffer, caption: txt },
+        { quoted: fkontak }
+      )
+    } else {
 
-⏳ Descargando el audio en 128 kbps…`
-
-    await conn.sendMessage(chatId, {
-      image: { url: video.thumbnail },
-      caption: banner
-    }, { quoted: msg })
-
-    const yta = await axios.get(
-      `https://api.neoxr.eu/api/youtube?url=${encodeURIComponent(video.url)}&type=audio&quality=128kbps&apikey=${NEOXR_KEY}`,
-      { timeout: 180000 }
-    )
-
-    const audioURL = yta?.data?.data?.url
-    if (!audioURL) throw new Error('No pude obtener el audio.')
-
-    const rawPath = path.join(tmpDir, `${Date.now()}_raw.m4a`)
-    const finalPath = path.join(tmpDir, `${slug(title)}.mp3`)
-
-    const audioStream = await axios.get(audioURL, { responseType: 'stream', timeout: 300000 })
-    await streamPipeline(audioStream.data, fs.createWriteStream(rawPath))
-
-    await new Promise((resolve, reject) => {
-      ffmpeg(rawPath)
-        .audioCodec('libmp3lame')
-        .audioBitrate('128k')
-        .format('mp3')
-        .save(finalPath)
-        .on('end', resolve)
-        .on('error', reject)
-    })
-
-    await conn.sendMessage(chatId, {
-      audio: fs.readFileSync(finalPath),
-      mimetype: 'audio/mpeg',
-      fileName: path.basename(finalPath),
-      ptt: false
-    }, { quoted: msg })
-
-    safeUnlink(inputPath)
-    safeUnlink(rawPath)
-    safeUnlink(finalPath)
-
-    try { await conn.sendMessage(chatId, { react: { text: '✅', key: msg.key } }) } catch {}
-
+      txt += `┗╾❑`
+      await conn.sendMessage(
+        m.chat,
+        { text: txt },
+        { quoted: fkontak }
+      )
+    }
   } catch (err) {
-    console.error('[whatmusic] Error:', err?.message || err)
-    try {
-      await conn.sendMessage(chatId, { text: `❌ Error: ${err?.message || 'Fallo desconocido.'}` }, { quoted: msg })
-      await conn.sendMessage(chatId, { react: { text: '❌', key: msg.key } })
-    } catch {}
-  } finally {
-    try {
-      const files = fs.readdirSync(tmpDir)
-      for (const f of files) if (/_in\.|_raw\.|\.mp3$|\.m4a$/i.test(f)) safeUnlink(path.join(tmpDir, f))
-    } catch {}
+    console.error(err)
+    conn.reply(m.chat, `❌ Error al procesar la música: ${err.message}`, m, rcanal)
   }
 }
 
-handler.command = ['whatmusic']
-handler.help = ['whatmusic']
-handler.tags = ['audio', 'tools']
+handler.help = ['whatmusic <audio/video>']
+handler.tags = ['tools']
+handler.command = ['shazam', 'whatmusic']
 
 export default handler
