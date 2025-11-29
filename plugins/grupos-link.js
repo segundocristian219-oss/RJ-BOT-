@@ -58,7 +58,7 @@ const handler = async (m, { conn }) => {
     // ==============================
     // CAPTION
     // ==============================
-    const caption =`${groupName}\n${link}
+    const caption =`*${groupName}*\n${link}
 `;
 
     // ==============================
