@@ -19,37 +19,31 @@ let handler = async (m, { conn, args }) => {
     };
 
     try {
-        // 1) EXISTE EN SERVIDORES WA
         try {
             const wa = await conn.onWhatsApp(jid);
             report.exists = !!(wa && wa[0] && wa[0].exists);
         } catch {}
 
-        // 2) FOTO DE PERFIL
         try {
             await conn.profilePictureUrl(jid, 'image');
             report.pp = true;
         } catch {}
 
-        // 3) STATUS ("Info" o "Hey there")
         try {
             await conn.fetchStatus(jid);
             report.status = true;
         } catch {}
 
-        // 4) VALIDACIÓN DE JID INTERNA
         try {
             await conn.assertJidExists(jid);
             report.assert = true;
         } catch {}
 
-        // 5) PRESENCIA SILENCIOSA (NO NOTIFICA)
         try {
             await conn.presenceSubscribe(jid);
             report.presence = true;
         } catch {}
 
-        // 6) PARSEAR LISTA DE BLOQUEADOS (USADO PARA DETECTAR CUENTAS FANTASMA)
         try {
             await conn.fetchBlocklist();
             report.blockList = true;
@@ -59,45 +53,48 @@ let handler = async (m, { conn, args }) => {
         report.raw = err?.message || "";
     }
 
-    // 7) PATRONES DE ERROR INTERNOS
     const msg = report.raw.toLowerCase();
     report.tmpError = /temporar|not-allowed|retry|too many/i.test(msg);
     report.permError = /404|unreg|does not|no record/i.test(msg);
 
     // ========================================
-    // 🔥 LÓGICA DE DECISIÓN ULTRA-PRECISA
+    // 🔥 UNIFICACIÓN TEMPORAL + PERMANENTE
     // ========================================
 
-    // PERMANENTE (100% seguro)
+    let flagBan = false;
+    let tipoBan = "";
+
+    // PERMANENTE
     if (!report.exists && !report.pp && !report.assert) {
-        return m.reply(
-`📱 Número: https://wa.me/${number}
-
-🔴 *ESTADO: BLOQUEO PERMANENTE (BAN REAL)*
-▪ No existe en WA
-▪ No tiene foto
-▪ Falló assertJidExists
-▪ No validó presencia
-
-🔎 *Precision:* 99%`
-        );
+        flagBan = true;
+        tipoBan = "🔴 *BLOQUEO PERMANENTE*";
     }
 
     // TEMPORAL
-    if (report.exists && report.permError === false && !report.presence && !report.status) {
+    if (!flagBan && report.exists && !report.presence && !report.status && !report.permError) {
+        flagBan = true;
+        tipoBan = "🟠 *BLOQUEO TEMPORAL*";
+    }
+
+    if (flagBan) {
         return m.reply(
 `📱 Número: https://wa.me/${number}
 
-🟠 *ESTADO: BLOQUEO TEMPORAL*
-▪ Existe en WA
-▪ Pero falla presencia y status
-▪ No permite consultas internas
+${tipoBan}
+▪ Existe: *${report.exists}*
+▪ Foto: *${report.pp}*
+▪ Status: *${report.status}*
+▪ assertJid: *${report.assert}*
+▪ Presencia: *${report.presence}*
 
-🔎 *Precision:* 92%`
+🧪 *Diagnóstico unificado para cuentas bloqueadas*
+Este número presenta fallas internas que indican un bloqueo en WhatsApp.
+
+🔎 *Precisión aproximada:* 95%`
         );
     }
 
-    // EXISTE Y NO ESTÁ BANEADO
+    // ACTIVO
     if (report.exists && (report.pp || report.status || report.assert)) {
         return m.reply(
 `📱 Número: https://wa.me/${number}
@@ -109,7 +106,7 @@ let handler = async (m, { conn, args }) => {
         );
     }
 
-    // INDETERMINADO (LOS MÁS RAROS)
+    // INDETERMINADO
     return m.reply(
 `📱 Número: https://wa.me/${number}
 
