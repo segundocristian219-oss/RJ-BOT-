@@ -10,7 +10,7 @@ global.prems = []
 global.emoji = '📎'
 global.emoji2 = '🏞️'
 global.namebot = '𝑹𝑱 𝑩𝑶𝑻'
-global.redes = 'https://whatsapp.com/channel/0029Vb70mFfATRSmOvzRWy1t'
+global.redes = 'https://whatsapp.com/channel/0029VbCgp4GEawdleolNwU0J'
 global.botname = '𝑹𝑱 𝑩𝑶𝑻'
 global.banner = 'https://cdn.russellxz.click/65b904ca.jpeg'
 global.packname = '𝑹𝑱 𝑩𝑶𝑻'
@@ -27,7 +27,7 @@ global.yukiJadibts = true
 global.namecanal = '𝑹𝑱 𝑩𝑶𝑻 𝖣𝖾𝗌𝖺𝗋𝗋𝗈𝗅𝗅𝗈'
 global.idcanal = '120363402177795471@newsletter'
 global.idcanal2 = '120363402177795471@newsletter'
-global.canal = 'https://whatsapp.com/channel/0029Vb70mFfATRSmOvzRWy1t'
+global.canal = 'https://whatsapp.com/channel/0029VbCgp4GEawdleolNwU0J'
 global.canalreg = '120363402177795471@newsletter'
 
 global.ch = {
