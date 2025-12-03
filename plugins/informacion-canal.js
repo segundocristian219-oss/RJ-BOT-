@@ -4,12 +4,12 @@ import path from 'path'
 export async function before(m, { conn }) {
   try {
 
-    let nombreBot = global.namebot || '𝑺𝑯𝑨𝑫𝑶𝑾 𝑩𝑶𝑻'
-    let bannerFinal = 'https://cdn.russellxz.click/0511ac06.jpeg'
+    let nombreBot = global.namebot || '𝑹𝑱 𝑩𝑶𝑻'
+    let bannerFinal = 'https://cdn.russellxz.click/4bc78abe.jpeg'
 
 
     const botActual = conn.user?.jid?.split('@')[0].replace(/\D/g, '')
-    const configPath = path.join('./𝑺𝑯𝑨𝑫𝑶𝑾 𝑩𝑶𝑻', botActual, 'config.json')
+    const configPath = path.join('./𝑹𝑱 𝑩𝑶𝑻', botActual, 'config.json')
 
     if (fs.existsSync(configPath)) {
       try {
