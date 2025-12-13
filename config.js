@@ -31,7 +31,7 @@ global.canal = 'https://whatsapp.com/channel/0029VbCgp4GEawdleolNwU0J'
 global.canalreg = ''
 
 global.ch = {
-  ch1: '120363402177795471@newsletter'
+  ch1: ''
 }
 
 global.multiplier = 69
