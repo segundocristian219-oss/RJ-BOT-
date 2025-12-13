@@ -25,10 +25,10 @@ global.jadi = '𝑹𝑱 𝑩𝑶𝑻'
 global.yukiJadibts = true
 
 global.namecanal = '𝑹𝑱 𝑩𝑶𝑻 𝖣𝖾𝗌𝖺𝗋𝗋𝗈𝗅𝗅𝗈'
-global.idcanal = '120363402177795471@newsletter'
-global.idcanal2 = '120363402177795471@newsletter'
+global.idcanal = ''
+global.idcanal2 = ''
 global.canal = 'https://whatsapp.com/channel/0029VbCgp4GEawdleolNwU0J'
-global.canalreg = '120363402177795471@newsletter'
+global.canalreg = ''
 
 global.ch = {
   ch1: '120363402177795471@newsletter'
